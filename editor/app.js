@@ -1,13 +1,13 @@
 // Workspace 1 page: block editor, generated code, runs and results.
 // API paths are relative so the page also works behind PrairieLearn's workspace proxy.
 
-import { defineBlocks, MAX_INSTANCES, START_STATE } from "./blocks.js";
+import { defineBlocks } from "./blocks.js";
 import { checkProgram, generateCode } from "./generators.js";
-import { TOOLBOX } from "./toolbox.js";
 
 const $ = (id) => document.getElementById(id);
 
 let cfg;
+let ws; // this workspace's module: workspaces/ws1.js, ...
 let workspace;
 let check = { problems: [], hints: [], notes: [] };
 let history = [];
@@ -47,7 +47,7 @@ function loadBlocks(state) {
   try {
     Blockly.serialization.workspaces.load(state, workspace);
   } catch {
-    Blockly.serialization.workspaces.load(START_STATE, workspace);
+    Blockly.serialization.workspaces.load(ws.START_STATE, workspace);
   }
 }
 
@@ -67,7 +67,7 @@ function highlight(code) {
 
 function updateCode() {
   $("code").innerHTML = highlight(generateCode(workspace));
-  check = checkProgram(workspace, cfg);
+  check = checkProgram(workspace, cfg, ws.checkModel);
   const lines = check.problems.length
     ? check.problems.map((p) => `<p class="problem">⚠ ${p}</p>`)
     : ['<p class="ok">✓ Ready to run.</p>'];
@@ -509,22 +509,34 @@ function hoverPractice(ev) {
 
 // ---------- start up ----------
 
+/** Fill in the parts of the page that differ between workspaces. */
+function setUpPage() {
+  const number = cfg.workspace.replace("ws", "");
+  document.title = `Workspace ${number}: ${cfg.title}`;
+  $("ws-number").textContent = number;
+  $("ws-title").textContent = cfg.title;
+  $("tab-steps").innerHTML = ws.STEPS;
+  for (const b of document.querySelectorAll(".tabs button")) b.hidden = !ws.TABS.includes(b.dataset.tab);
+}
+
 async function main() {
   cfg = await api("api/config");
+  ws = await import(`./workspaces/${cfg.workspace}.js`);
+  setUpPage();
   defineBlocks(cfg);
   workspace = Blockly.inject("blockly", {
-    toolbox: TOOLBOX,
+    toolbox: ws.TOOLBOX,
     renderer: "zelos",
     media: "vendor/blockly/media/",
     sounds: false,
     trashcan: true,
-    maxInstances: MAX_INSTANCES,
+    maxInstances: ws.MAX_INSTANCES,
     zoom: { controls: true, wheel: false, startScale: 0.75 },
     move: { scrollbars: true, drag: true, wheel: true },
     grid: { spacing: 24, length: 2, colour: "#e3e6ea", snap: false },
   });
   const saved = await api("api/blocks").catch(() => ({ blocks: null }));
-  loadBlocks(saved.blocks || START_STATE);
+  loadBlocks(saved.blocks || ws.START_STATE);
   workspace.addChangeListener(Blockly.Events.disableOrphans);
   workspace.addChangeListener((e) => {
     if (e.isUiEvent) return;
@@ -547,7 +559,7 @@ async function main() {
   $("reset").onclick = () => {
     if (confirm("Replace your blocks with the starting linear model?")) {
       workspace.clear();
-      loadBlocks(START_STATE);
+      loadBlocks(ws.START_STATE);
     }
   };
   $("practice-canvas").addEventListener("mousemove", hoverPractice);

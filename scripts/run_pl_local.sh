@@ -3,8 +3,8 @@
 # using the locally built images (no pulling). Then open http://localhost:3000/pl
 # and preview the question from the course's Questions page.
 #
-#   docker build --platform linux/amd64 -f workspace-image/Dockerfile -t cs124h/mpnn-workspace:ws1 .
-#   docker build --platform linux/amd64 -f grader/Dockerfile -t cs124h/mpnn-grader:ws1 .
+#   docker build --platform linux/amd64 -f workspace-image/Dockerfile -t cs124h/mpnn-workspace:fa26 .
+#   docker build --platform linux/amd64 -f grader/Dockerfile -t cs124h/mpnn-grader:fa26 .
 #   scripts/run_pl_local.sh [JOBS_DIR]
 #
 # Works from Git Bash with Docker Desktop on Windows, and from Linux/macOS/WSL.

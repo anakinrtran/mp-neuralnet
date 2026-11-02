@@ -18,7 +18,8 @@ API
   POST /api/submission  {run_id}      save a finished run's code and weights for grading
 
 Environment
-  MPNN_RUNS    run history and saved blocks (default: repo/runs)
+  MPNN_WORKSPACE  which workspace this is: ws1, ws2, ... (default ws1)
+  MPNN_RUNS    run history and saved blocks (default: repo/runs/<workspace>)
   MPNN_SUBMIT  where Submit puts model.py, model.pt and submission.json (default: repo/submission).
                In PrairieLearn this is the workspace home, and those files are its gradedFiles.
 """
@@ -46,10 +47,10 @@ from server.runs import RunManager  # noqa: E402
 from server.weights import WeightsUnavailable, first_layer_units  # noqa: E402
 from shared import config  # noqa: E402
 from shared.grids import mosaic  # noqa: E402
-from shared.harness import DATA_DIR  # noqa: E402
+from shared.harness import DATA_DIR, WORKSPACE  # noqa: E402
 from shared.palette import CLASSES, PALETTE_HEX  # noqa: E402
 
-RUNS_DIR = Path(os.environ.get("MPNN_RUNS", REPO / "runs"))
+RUNS_DIR = Path(os.environ.get("MPNN_RUNS", REPO / "runs" / WORKSPACE.id))
 SUBMIT_DIR = Path(os.environ.get("MPNN_SUBMIT", REPO / "submission"))
 BLOCKS_FILE = RUNS_DIR / "blocks.json"
 EDITOR_DIR = REPO / "editor"
@@ -80,11 +81,13 @@ def get_run(run_id: str):
 @app.get("/api/config")
 def get_config():
     return {
+        "workspace": WORKSPACE.id,
+        "title": WORKSPACE.title,
         "classes": CLASSES,
         "colors": [PALETTE_HEX[c] for c in CLASSES],
         "num_classes": config.NUM_CLASSES,
         "hidden": {"default": config.HIDDEN_DEFAULT, "min": config.HIDDEN_MIN, "max": config.HIDDEN_MAX},
-        "epochs": {"default": config.DEFAULT_EPOCHS, "max": config.MAX_EPOCHS},
+        "epochs": {"default": WORKSPACE.default_epochs, "max": WORKSPACE.max_epochs},
     }
 
 
@@ -152,7 +155,7 @@ def practice_characters():
     global _characters_png
     if _characters_png is None:
         buf = io.BytesIO()
-        Image.fromarray(mosaic(np.load(DATA_DIR / "practice_ws1.npz")["x"])).save(buf, format="PNG")
+        Image.fromarray(mosaic(np.load(DATA_DIR / WORKSPACE.practice_file)["x"])).save(buf, format="PNG")
         _characters_png = buf.getvalue()
     return Response(_characters_png, media_type="image/png")
 
