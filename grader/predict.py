@@ -28,7 +28,7 @@ def main():
             result = {"error": f"The submitted model could not be loaded (RuntimeError: {e})."}
         else:
             result = {"error": "The saved weights don't fit the submitted model code. In the workspace, "
-                               "click Submit again, then Save & Grade."}
+                               "run your model again, then Save & Grade."}
     except Exception as e:
         result = {"error": f"The submitted model could not be loaded ({type(e).__name__}: {e})."}
     print("@@" + json.dumps(result))

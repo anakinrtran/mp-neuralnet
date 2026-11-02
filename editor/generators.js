@@ -21,8 +21,23 @@ generator.forBlock.load_data = () =>
 generator.forBlock.model = (block) =>
   "model = nn.Sequential(\n" + generator.statementToCode(block, "LAYERS") + ")\n\n";
 
-generator.forBlock.flatten = () =>
-  "nn.Flatten(),  # turn each 28x28 image into a list of 784 numbers\n";
+generator.forBlock.flatten = (block) =>
+  block.getPreviousBlock()?.type === "model"
+    ? "nn.Flatten(),  # turn each 28x28 image into a list of 784 numbers\n"
+    : "nn.Flatten(),  # turn the filter outputs into one list of numbers\n";
+
+generator.forBlock.conv = (block) => {
+  const filters = block.getFieldValue("FILTERS");
+  const comment = generator.firstConv ? `  # ${filters} filters, each a 3x3 pattern detector` : "";
+  generator.firstConv = false;
+  return `nn.LazyConv2d(${filters}, kernel_size=3, padding=1),${comment}\n`;
+};
+
+generator.forBlock.maxpool = () => {
+  const comment = generator.firstPool ? "  # keep the strongest value in each 2x2 patch" : "";
+  generator.firstPool = false;
+  return `nn.MaxPool2d(2),${comment}\n`;
+};
 
 generator.forBlock.linear = (block) => {
   const outputs = block.getFieldValue("OUTPUTS");
@@ -50,6 +65,8 @@ export function generateCode(workspace) {
   if (!start) return HEADER + "# Add a Load data block to start your program.\n";
   generator.init(workspace);
   generator.firstLinear = true;
+  generator.firstConv = true;
+  generator.firstPool = true;
   return HEADER + generator.blockToCode(start).trimEnd() + "\n";
 }
 

@@ -81,7 +81,6 @@ function updateButtons() {
   $("run").disabled = running || check.problems.length > 0;
   $("run").hidden = running;
   $("stop").hidden = !running;
-  $("submit").disabled = running || !latestFinished();
 }
 
 // ---------- tabs ----------
@@ -208,48 +207,38 @@ function finishRun(status, live) {
       markFresh("weights");
     }
   }
-  refreshHistory();
+  refreshHistory().then(refreshSubmission);
 }
 
 setInterval(() => {
   if (running) $("status").textContent = `Running… ${Math.round((Date.now() - runStarted) / 1000)}s`;
 }, 500);
 
-// ---------- submit ----------
+// ---------- grading ----------
+// Every finished run is saved for grading by the server; this shows which one.
 
-const latestFinished = () => history.filter((r) => r.status === "done").pop();
 const runNumber = (id) => history.findIndex((r) => r.id === id) + 1;
 
-async function submitLatest() {
-  const run = latestFinished();
-  if (!run) return;
-  try {
-    ({ submission } = await api("api/submission", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ run_id: run.id }),
-    }));
-  } catch (e) {
-    $("status").textContent = e.message;
-    return;
-  }
-  $("status").textContent = `Submitted run ${runNumber(run.id)}.`;
-  showSubmission();
-  refreshHistory();
-  showTab("steps");
-}
-
-function showSubmission() {
+async function refreshSubmission() {
+  ({ submission } = await api("api/submission").catch(() => ({ submission: null })));
+  const chip = $("graded");
   const note = $("submit-note");
   if (!submission) {
-    note.innerHTML = "Click <b>Submit</b> at the top. It saves your latest finished run for grading.";
+    chip.textContent = "";
+    if (note) note.textContent = "Finish a run first. Every finished run is saved for grading.";
     return;
   }
   const n = runNumber(submission.run_id);
-  note.innerHTML = `<span class="ok">✓ Submitted run ${n || ""} ` +
-    `(${layersText(submission.layers)}, ${pct(submission.val_accuracy)} validation accuracy).</span> ` +
-    "Now go back to the PrairieLearn question page and click <b>Save &amp; Grade</b>. " +
-    "To submit a better model later, run it and click Submit again.";
+  chip.textContent = `Save & Grade grades run ${n} · ${pct(submission.val_accuracy)}`;
+  if (note) {
+    note.innerHTML = `<span class="ok">✓ Run ${n} is saved for grading ` +
+      `(${layersText(submission.layers)}, ${pct(submission.val_accuracy)} validation accuracy).</span> ` +
+      "Go back to the PrairieLearn question page and click <b>Save &amp; Grade</b>. " +
+      "Each new finished run replaces it.";
+  }
+  for (const td of document.querySelectorAll("#history .badge")) td.remove();
+  document.querySelector(`#history tr[data-run="${submission.run_id}"] td:last-child`)
+    ?.insertAdjacentHTML("beforeend", ' <span class="badge">graded</span>');
 }
 
 // ---------- charts ----------
@@ -384,12 +373,12 @@ async function refreshHistory() {
     $("compare-cards").innerHTML = card("First run", first) + card("Latest run", latest, delta);
   }
   $("history").querySelector("tbody").innerHTML = history.map((r, i) => `
-    <tr>
+    <tr data-run="${r.id}">
       <td>${i + 1}</td>
       <td>${layersText(r.layers)}</td>
       <td class="num">${r.epochs ?? "—"}</td>
       <td class="num">${r.val_accuracy != null ? pct(r.val_accuracy) : "—"}</td>
-      <td>${r.status}${submission?.run_id === r.id ? ' <span class="badge">submitted</span>' : ""}</td>
+      <td>${r.status}${submission?.run_id === r.id ? ' <span class="badge">graded</span>' : ""}</td>
     </tr>`).join("");
   updateButtons();
   if (!$("tab-weights").hidden) renderWeights();
@@ -563,12 +552,10 @@ async function main() {
     }
   };
   $("practice-canvas").addEventListener("mousemove", hoverPractice);
-  $("submit").onclick = submitLatest;
 
   // Pick up where we left off: reattach to a run in progress, or show the latest one.
-  ({ submission } = await api("api/submission").catch(() => ({ submission: null })));
   await refreshHistory();
-  showSubmission();
+  await refreshSubmission();
   const active = history.find((r) => r.status === "running");
   const latest = history[history.length - 1];
   if (active) {

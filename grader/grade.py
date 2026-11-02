@@ -1,8 +1,9 @@
-"""PrairieLearn external grader for Workspace 1.
+"""PrairieLearn external grader for every workspace (MPNN_WORKSPACE picks which).
 
 Reads the submitted model.py and model.pt from /grade/student, decodes the practice grid
 without retraining, and writes /grade/results/results.json. The score is 1 if the visible
-practice accuracy meets PRACTICE_THRESHOLD, else 0. Feedback shows the student's decoded
+practice accuracy meets the workspace's threshold (and the model has any layers the
+workspace requires, e.g. a Conv layer in Workspace 2), else 0. Feedback shows the student's decoded
 image next to the original.
 
 Student code runs in a separate process as an unprivileged user (when started as root,
@@ -45,13 +46,26 @@ AS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 def ws1_hint(layers: list[str]) -> str:
     if sum(name.startswith("Linear") for name in layers) == 1:
         return ("A linear model can't reach this. Add a hidden layer: "
-                "Flatten → Linear 128 → ReLU → Linear 36, run it, Submit, and grade again.")
+                "Flatten → Linear 128 → ReLU → Linear 36, run it, then Save & Grade again.")
     return ("Check that a ReLU comes right after your hidden Linear layer, "
-            "or try more epochs. Then run, Submit, and grade again.")
+            "or try more epochs. Then run it and Save & Grade again.")
+
+
+def ws2_hint(layers: list[str]) -> str:
+    if sum(name.startswith("Conv") for name in layers) < 2:
+        return "Try a second Conv → ReLU → MaxPool, or more epochs. Then run it and Save & Grade again."
+    return "Try more filters or more epochs. Then run it and Save & Grade again."
 
 
 # What to suggest when a submission falls short, per workspace, given the model's layer names.
-FAIL_HINTS = {"ws1": ws1_hint}
+FAIL_HINTS = {"ws1": ws1_hint, "ws2": ws2_hint}
+
+# Layers a submission must contain, per workspace: (layer name prefix, test name, message if missing).
+REQUIRED_LAYERS = {
+    "ws2": [("Conv", "The model has a Conv layer",
+             "Your model has no Conv layer, and this workspace is about convolutional networks. "
+             "Add Conv → ReLU → MaxPool above Flatten, run it, then Save & Grade again.")],
+}
 
 
 def write_results(results: dict):
@@ -112,7 +126,7 @@ def predict(code: Path, weights: Path) -> dict:
 def main():
     code, weights = STUDENT / "model.py", STUDENT / "model.pt"
     if not (code.exists() and weights.exists()):
-        not_gradable("No trained model was submitted. In the workspace, run your model, click Submit, "
+        not_gradable("No trained model was found. In the workspace, run your model until it finishes, "
                      "then come back here and click Save & Grade.")
         return
     info_path = STUDENT / "submission.json"
@@ -136,10 +150,21 @@ def main():
     summary = (f"{visible:.1%} of the practice image's pixels have the right color "
                f"(you need {needed:.1%}). {int(wrong.sum())} of {wrong.size} pixels are wrong.")
     layers = result["layers"]
-    if passed:
+    tests = [{"name": f"Practice image: at least {needed:.1%} of pixels right",
+              "points": int(passed), "max_points": 1, "message": summary}]
+    missing = []
+    for prefix, name, why in REQUIRED_LAYERS.get(WORKSPACE.id, []):
+        has = any(layer.startswith(prefix) for layer in layers)
+        tests.append({"name": name, "points": int(has), "max_points": 1, "message": "" if has else why})
+        if not has:
+            missing.append(why)
+    if missing:
+        message = "Not yet. " + " ".join(missing) + " (" + summary + ")"
+    elif passed:
         message = "Passed. " + summary
     else:
         message = "Not yet. " + summary + " " + FAIL_HINTS[WORKSPACE.id](layers)
+    passed = passed and not missing
 
     model_line = " → ".join(layers)
     val = info.get("val_accuracy")
@@ -161,12 +186,7 @@ def main():
             {"label": "The original image", "url": png_data_url(upscale(classes_to_image(labels, palette), SCALE))},
             {"label": "Wrong pixels (red)", "url": png_data_url(upscale(mask, SCALE))},
         ],
-        "tests": [{
-            "name": f"Practice image: at least {needed:.1%} of pixels right",
-            "points": 1 if passed else 0,
-            "max_points": 1,
-            "message": summary,
-        }],
+        "tests": tests,
     })
 
 

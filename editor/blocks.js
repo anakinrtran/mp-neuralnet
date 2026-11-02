@@ -49,11 +49,12 @@ export function defineBlocks(cfg) {
     },
     {
       type: "flatten",
-      message0: "Flatten  (28×28 image → 784 numbers)",
+      message0: "Flatten  (image → one list of numbers)",
       previousStatement: "Layer",
       nextStatement: "Layer",
       colour: CATEGORY_COLORS.model,
-      tooltip: "Turns each 28×28 image into one long list of 784 pixel values. Put it first.",
+      tooltip: "Turns each image (or a Conv layer's filter outputs) into one long list of numbers, " +
+               "which Linear layers need. A 28×28 image becomes 784 numbers.",
     },
     {
       type: "linear",
@@ -68,12 +69,32 @@ export function defineBlocks(cfg) {
                `${cfg.hidden.min}–${cfg.hidden.max}.`,
     },
     {
+      type: "conv",
+      message0: "Conv  filters %1  (3×3)",
+      args0: [{ type: "field_number", name: "FILTERS", value: cfg.conv.default,
+                min: cfg.conv.min, max: cfg.conv.max, precision: 1 }],
+      previousStatement: "Layer",
+      nextStatement: "Layer",
+      colour: CATEGORY_COLORS.model,
+      tooltip: `Slides small 3×3 pattern detectors (filters) over the image. Each filter makes ` +
+               `its own output image showing where its pattern appears. ${cfg.conv.min}–${cfg.conv.max} filters.`,
+    },
+    {
+      type: "maxpool",
+      message0: "MaxPool  (halve the size)",
+      previousStatement: "Layer",
+      nextStatement: "Layer",
+      colour: CATEGORY_COLORS.model,
+      tooltip: "Shrinks each filter output to half its width and height, keeping the strongest " +
+               "value in every 2×2 patch. 28×28 → 14×14 → 7×7 → 3×3.",
+    },
+    {
       type: "relu",
       message0: "ReLU",
       previousStatement: "Layer",
       nextStatement: "Layer",
       colour: CATEGORY_COLORS.model,
-      tooltip: "Keeps positive numbers and turns negative ones into 0. Put it after a hidden Linear layer.",
+      tooltip: "Keeps positive numbers and turns negative ones into 0. Put it after a hidden Linear layer or a Conv layer.",
     },
     {
       type: "train",

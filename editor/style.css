@@ -57,6 +57,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 button.quiet { border-color: transparent; color: var(--ink-muted); }
 .ok { color: #2d7a46; }
+.graded { font-size: 13px; color: var(--ink-muted); }
 .badge { font-size: 11px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
 
 main {

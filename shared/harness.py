@@ -168,10 +168,18 @@ def check_model(model):
 
 
 def describe_layers(model) -> list[str]:
-    """Short layer names, e.g. ["Flatten", "Linear(128)", "ReLU", "Linear(36)"]."""
+    """Short layer names, e.g. ["Conv(16)", "ReLU", "MaxPool", "Flatten", "Linear(36)"]."""
     layers = list(model.children()) if isinstance(model, nn.Sequential) else [model]
-    return [f"Linear({m.out_features})" if isinstance(m, nn.Linear) else type(m).__name__
-            for m in layers]
+
+    def name(m):
+        if isinstance(m, nn.Linear):
+            return f"Linear({m.out_features})"
+        if isinstance(m, nn.Conv2d):
+            return f"Conv({m.out_channels})"
+        if isinstance(m, nn.MaxPool2d):
+            return "MaxPool"
+        return type(m).__name__
+    return [name(m) for m in layers]
 
 
 @torch.no_grad()
@@ -214,8 +222,8 @@ def main():
     parser.add_argument("code", type=Path)
     parser.add_argument("--run-dir", type=Path, default=Path("run"))
     parser.add_argument("--seed", type=int, default=0)
-    # 1 thread is fastest for Workspace 1 models (benchmarked) and predictable on shared CPUs
-    parser.add_argument("--threads", type=int, default=1, help="0 = torch default")
+    # threads per workspace (shared/workspaces.py): 1 is fastest for small fully connected models
+    parser.add_argument("--threads", type=int, default=WORKSPACE.threads, help="0 = torch default")
     args = parser.parse_args()
 
     # generated code does "from harness import ..."; make that refer to this module
