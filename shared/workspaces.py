@@ -40,8 +40,9 @@ WORKSPACES = {ws.id: ws for ws in [
         title="Basic network",
         question="ws1-basic-network",
         practice_image="workspace1_dog.png",
-        # Baselines (scripts/benchmark_ws1.py, 5 seeds): linear 85.3-87.4%, ReLU-128 90.5-94.9%.
-        threshold=0.89,
+        # Baselines (scripts/benchmark_ws1.py, 5 seeds, fitted palette): linear 85.6-87.3%, ReLU-128 89.9-93.8%;
+        # 0.885 is about halfway between the best linear and the worst ReLU seed.
+        threshold=0.885,
         default_epochs=5,
         max_epochs=10,
     ),

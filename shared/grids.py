@@ -1,7 +1,7 @@
 """Encode an image into a grid of handwritten characters, and decode predictions back.
 
-Encoding: each pixel is snapped to the nearest palette color (its class), then
-replaced by a distinct EMNIST test character of that class.
+Encoding: each pixel gets the color group of its nearest palette color (see palette.py),
+then a distinct EMNIST test character from that group (either class of a look-alike pair).
 Decoding: each predicted class is mapped back to its palette color.
 """
 
@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from shared.palette import CLASSES, PALETTE, nearest_class
+from shared.palette import VISIBLE_GROUP, group_name
 
 
 def load_image(path: str | Path) -> np.ndarray:
@@ -21,19 +21,14 @@ def load_image(path: str | Path) -> np.ndarray:
     return rgb
 
 
-def image_to_classes(rgb: np.ndarray) -> np.ndarray:
-    """(H, W, 3) image -> (H, W) class indices."""
-    return nearest_class(rgb)
+def classes_to_image(classes: np.ndarray, palette: np.ndarray) -> np.ndarray:
+    """(H, W) class indices -> (H, W, 3) image in the given (36, 3) palette."""
+    return palette[classes]
 
 
-def classes_to_image(classes: np.ndarray) -> np.ndarray:
-    """(H, W) class indices -> (H, W, 3) palette image."""
-    return PALETTE[classes]
-
-
-def build_grid(classes: np.ndarray, pool_y: np.ndarray, seed: int,
+def build_grid(groups: np.ndarray, pool_y: np.ndarray, seed: int,
                exclude: np.ndarray | None = None) -> np.ndarray:
-    """Pick a distinct pool index for every pixel, matching its class.
+    """Pick a distinct pool index for every pixel, from the pixel's color group.
 
     Returns an (H, W) array of indices into the character pool. `exclude` lists
     pool indices that must not be used (e.g. characters used by another grid).
@@ -43,19 +38,20 @@ def build_grid(classes: np.ndarray, pool_y: np.ndarray, seed: int,
     if exclude is not None:
         available[exclude] = False
 
-    flat = classes.ravel()
+    pool_group = VISIBLE_GROUP[pool_y]
+    flat = groups.ravel()
     picks = np.empty(flat.shape, dtype=np.int64)
     shortages = []
-    for c in np.unique(flat):
-        need = np.flatnonzero(flat == c)
-        have = np.flatnonzero(available & (pool_y == c))
+    for g in np.unique(flat):
+        need = np.flatnonzero(flat == g)
+        have = np.flatnonzero(available & (pool_group == g))
         if len(have) < len(need):
-            shortages.append(f"{CLASSES[c]}: need {len(need)}, have {len(have)}")
+            shortages.append(f"{group_name(g)}: need {len(need)}, have {len(have)}")
             continue
         picks[need] = rng.choice(have, size=len(need), replace=False)
     if shortages:
         raise ValueError("Not enough test characters for: " + "; ".join(shortages))
-    return picks.reshape(classes.shape)
+    return picks.reshape(groups.shape)
 
 
 def upscale(rgb: np.ndarray, scale: int) -> np.ndarray:
