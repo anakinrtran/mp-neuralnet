@@ -1,4 +1,5 @@
-# Student workspace for MP NeuralNet: the block editor and the server that runs its code.
+# Student workspace for every MP NeuralNet workspace: the block editor and the server that
+# runs its code. Each question picks its workspace with MPNN_WORKSPACE in workspaceOptions.environment.
 # Build from the repo root:
 #   docker build --platform linux/amd64 -f workspace-image/Dockerfile -t IMAGE .
 FROM python:3.13-slim
@@ -6,7 +7,7 @@ FROM python:3.13-slim
 COPY requirements.txt /opt/mpnn/requirements.txt
 RUN pip install --no-cache-dir -r /opt/mpnn/requirements.txt
 
-# Public data only: training/validation sets and the practice characters (no labels).
+# Public data only: training/validation sets and every workspace's practice characters (no labels).
 COPY data/processed/public/ /opt/mpnn/data/
 COPY shared/ /opt/mpnn/shared/
 COPY server/ /opt/mpnn/server/

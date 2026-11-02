@@ -25,7 +25,7 @@ sys.path.insert(0, str(REPO))
 from shared.palette import VISIBLE_GROUP  # noqa: E402
 
 FIXTURES = REPO / "fixtures"
-LABELS = REPO / "data" / "processed" / "private" / "practice_ws1.npz"
+LABELS = REPO / "data" / "processed" / "private" / "practice_ws1.npz"  # this script is Workspace 1 only
 
 
 def model_code(hidden: int | None, epochs: int) -> str:

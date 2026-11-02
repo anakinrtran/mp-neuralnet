@@ -1,4 +1,5 @@
-// Block definitions for Workspace 1.
+// Block library for all workspaces. Each workspace module (workspaces/ws1.js, ...) picks
+// which blocks go in its toolbox.
 //
 // Two kinds of stacking: pipeline steps ("Step") stack under Load data, and layers
 // ("Layer") stack inside the Model block. Load data has no top connection, so it is
@@ -11,6 +12,21 @@ export const CATEGORY_COLORS = {
   training: "#c0763a",
   evaluation: "#3f9a5a",
 };
+
+const CATEGORY_NAMES = { data: "Data", model: "Model", training: "Training", evaluation: "Evaluation" };
+
+/** A toolbox with one category per pipeline stage, e.g. categoryToolbox({ data: ["load_data"], ... }). */
+export function categoryToolbox(blocksByStage) {
+  return {
+    kind: "categoryToolbox",
+    contents: Object.entries(blocksByStage).map(([stage, types]) => ({
+      kind: "category",
+      name: CATEGORY_NAMES[stage],
+      colour: CATEGORY_COLORS[stage],
+      contents: types.map((type) => ({ kind: "block", type })),
+    })),
+  };
+}
 
 export function defineBlocks(cfg) {
   Blockly.common.defineBlocksWithJsonArray([
@@ -88,29 +104,3 @@ export function defineBlocks(cfg) {
     },
   ]);
 }
-
-// Only one of each pipeline step is allowed.
-export const MAX_INSTANCES = {
-  load_data: 1, model: 1, train: 1, evaluate: 1, decode_practice: 1,
-};
-
-// What students see when they first open the workspace (or click Reset blocks).
-export const START_STATE = {
-  blocks: {
-    languageVersion: 0,
-    blocks: [{
-      type: "load_data", x: 40, y: 40,
-      next: { block: {
-        type: "model",
-        inputs: { LAYERS: { block: {
-          type: "flatten",
-          next: { block: { type: "linear", fields: { OUTPUTS: 36 } } },
-        } } },
-        next: { block: {
-          type: "train", fields: { EPOCHS: 5 },
-          next: { block: { type: "evaluate" } },
-        } },
-      } },
-    }],
-  },
-};
