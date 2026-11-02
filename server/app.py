@@ -48,7 +48,7 @@ from server.weights import WeightsUnavailable, first_layer_units  # noqa: E402
 from shared import config  # noqa: E402
 from shared.grids import mosaic  # noqa: E402
 from shared.harness import DATA_DIR, WORKSPACE  # noqa: E402
-from shared.palette import CLASSES, PALETTE_HEX  # noqa: E402
+from shared.palette import CLASSES, load_palette, rgb_to_hex  # noqa: E402
 
 RUNS_DIR = Path(os.environ.get("MPNN_RUNS", REPO / "runs" / WORKSPACE.id))
 SUBMIT_DIR = Path(os.environ.get("MPNN_SUBMIT", REPO / "submission"))
@@ -84,7 +84,7 @@ def get_config():
         "workspace": WORKSPACE.id,
         "title": WORKSPACE.title,
         "classes": CLASSES,
-        "colors": [PALETTE_HEX[c] for c in CLASSES],
+        "colors": [rgb_to_hex(c) for c in load_palette(WORKSPACE.id)],
         "num_classes": config.NUM_CLASSES,
         "hidden": {"default": config.HIDDEN_DEFAULT, "min": config.HIDDEN_MIN, "max": config.HIDDEN_MAX},
         "epochs": {"default": WORKSPACE.default_epochs, "max": WORKSPACE.max_epochs},

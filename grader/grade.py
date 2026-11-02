@@ -30,7 +30,7 @@ sys.path.insert(0, str(HERE.parent))
 
 from shared.grids import classes_to_image, upscale  # noqa: E402
 from shared.harness import DATA_DIR, WORKSPACE  # noqa: E402
-from shared.palette import VISIBLE_GROUP  # noqa: E402
+from shared.palette import VISIBLE_GROUP, load_palette  # noqa: E402
 
 GRADE = Path(os.environ.get("GRADE_DIR", "/grade"))
 STUDENT = GRADE / "student"
@@ -134,7 +134,7 @@ def main():
     passed = visible >= WORKSPACE.threshold
     needed = WORKSPACE.threshold
     summary = (f"{visible:.1%} of the practice image's pixels have the right color "
-               f"(you need {needed:.0%}). {int(wrong.sum())} of {wrong.size} pixels are wrong.")
+               f"(you need {needed:.1%}). {int(wrong.sum())} of {wrong.size} pixels are wrong.")
     layers = result["layers"]
     if passed:
         message = "Passed. " + summary
@@ -149,6 +149,7 @@ def main():
               + f"Practice image, exact accuracy: {raw:.1%}\n\n"
               + "Submitted code:\n" + code.read_text(encoding="utf-8", errors="replace"))
 
+    palette = load_palette(WORKSPACE.id)
     mask = np.where(wrong[..., None], [220, 40, 40], [245, 245, 245]).astype(np.uint8)
     write_results({
         "gradable": True,
@@ -156,12 +157,12 @@ def main():
         "message": message,
         "output": output,
         "images": [
-            {"label": "Your decoded image", "url": png_data_url(upscale(classes_to_image(pred), SCALE))},
-            {"label": "The original image", "url": png_data_url(upscale(classes_to_image(labels), SCALE))},
+            {"label": "Your decoded image", "url": png_data_url(upscale(classes_to_image(pred, palette), SCALE))},
+            {"label": "The original image", "url": png_data_url(upscale(classes_to_image(labels, palette), SCALE))},
             {"label": "Wrong pixels (red)", "url": png_data_url(upscale(mask, SCALE))},
         ],
         "tests": [{
-            "name": f"Practice image: at least {needed:.0%} of pixels right",
+            "name": f"Practice image: at least {needed:.1%} of pixels right",
             "points": 1 if passed else 0,
             "max_points": 1,
             "message": summary,

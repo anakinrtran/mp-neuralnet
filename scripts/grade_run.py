@@ -22,7 +22,7 @@ sys.path.insert(0, str(REPO))
 
 from shared import harness  # noqa: E402
 from shared.grids import classes_to_image, upscale  # noqa: E402
-from shared.palette import VISIBLE_GROUP  # noqa: E402
+from shared.palette import VISIBLE_GROUP, load_palette  # noqa: E402
 
 LABELS = REPO / "data" / "processed" / "private" / harness.WORKSPACE.practice_file
 SCALE = 8
@@ -48,8 +48,9 @@ def review_image(pred: np.ndarray, labels: np.ndarray) -> np.ndarray:
     wrong = VISIBLE_GROUP[pred] != VISIBLE_GROUP[labels]
     mask = np.where(wrong[..., None], [220, 40, 40], [245, 245, 245]).astype(np.uint8)
     gap = np.full((labels.shape[0] * SCALE, SCALE, 3), 255, np.uint8)
-    parts = [upscale(classes_to_image(pred), SCALE), gap,
-             upscale(classes_to_image(labels), SCALE), gap, upscale(mask, SCALE)]
+    palette = load_palette(harness.WORKSPACE.id)
+    parts = [upscale(classes_to_image(pred, palette), SCALE), gap,
+             upscale(classes_to_image(labels, palette), SCALE), gap, upscale(mask, SCALE)]
     return np.concatenate(parts, axis=1)
 
 
@@ -61,7 +62,7 @@ def main():
 
     labels = np.load(LABELS)["y"]
     rows = []
-    print(f"{harness.WORKSPACE.id} threshold: {harness.WORKSPACE.threshold:.2f} visible accuracy")
+    print(f"{harness.WORKSPACE.id} threshold: {harness.WORKSPACE.threshold:.1%} visible accuracy")
     for run_dir in args.runs:
         r = grade(run_dir, labels)
         seconds = json.loads((run_dir / "summary.json").read_text()).get("seconds")
