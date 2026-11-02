@@ -3,8 +3,8 @@
     python predict.py model.py model.pt
 
 grade.py runs this as an unprivileged user that can't read the labels, because model.py
-is student code. The last line of stdout is "@@" + JSON: {"pred": [[...]], "layers": [...]}
-or {"error": "..."}.
+is student code. The last line of stdout is "@@" + JSON:
+{"pred": [[...]], "layers": [...], "workspace": "ws2"} or {"error": "..."}.
 """
 
 import json
@@ -18,9 +18,11 @@ from shared import harness  # noqa: E402
 
 def main():
     code, weights = sys.argv[1:3]
+    harness.torch.set_num_threads(harness._cpu_limit())
     try:
         model = harness.load_trained_model(code, weights)
-        result = {"pred": harness.predict_practice(model).tolist(), "layers": harness.describe_layers(model)}
+        result = {"pred": harness.predict_practice(model).tolist(), "layers": harness.describe_layers(model),
+                  "workspace": harness.WORKSPACE.id}
     except harness.StudentError as e:
         result = {"error": str(e)}
     except RuntimeError as e:

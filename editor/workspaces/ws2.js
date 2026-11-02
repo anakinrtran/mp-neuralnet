@@ -4,7 +4,7 @@ import { categoryToolbox } from "../blocks.js";
 import { hiddenSizeProblems, misplacedReluHints, outputLayerProblems } from "../checks.js";
 
 // Result tabs to show, in order.
-export const TABS = ["steps", "training", "compare", "practice"];
+export const TABS = ["steps", "training", "compare", "filters", "onestep", "practice"];
 
 export const STEPS = `
   <ol class="steps">
@@ -14,6 +14,11 @@ export const STEPS = `
       <b>MaxPool</b> into the Model above Flatten, so it reads
       <b>Conv 16 → ReLU → MaxPool → Flatten → Linear 128 → ReLU → Linear 36</b>.
       Run it, then open <b>Compare runs</b>.</li>
+    <li><b>Watch the filters learn.</b> Open <b>Filters</b> and drag the slider from "before training"
+      to the end. Which filters end up finding edges? Which find the character's strokes?</li>
+    <li><b>Take one training step apart.</b> Open <b>One step</b> and click <b>Next</b> through a
+      single step on a character your model gets wrong: its guess, the loss, backpropagation,
+      the weight changes, and the guess afterward.</li>
     <li><b>Go deeper.</b> Add a second <b>Conv 32 → ReLU → MaxPool</b> right after the first one.
       Run again and open <b>Practice image</b>.</li>
     <li><b>Grade.</b> <span id="submit-note"></span></li>

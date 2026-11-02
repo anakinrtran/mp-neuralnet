@@ -10,6 +10,8 @@ API
   GET  /api/runs/{id}/events          progress as Server-Sent Events (replays from the start)
   POST /api/runs/{id}/stop            stop a run
   GET  /api/runs/{id}/weights?kind=   first-layer weights ("templates" or "features")
+  GET  /api/runs/{id}/timelapse       first Conv layer's filters and outputs during training
+  GET  /api/runs/{id}/onestep?start=  one training step on a misread validation character, taken apart
   GET  /api/runs/{id}/decoded         decoded practice grid
   GET  /api/practice/characters.png   the practice characters, for hover previews
   GET  /api/blocks                    saved blocks (null if none yet)
@@ -41,8 +43,9 @@ from pydantic import BaseModel
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
+from server.onestep import one_step  # noqa: E402
 from server.runs import RunManager  # noqa: E402
-from server.weights import WeightsUnavailable, first_layer_units  # noqa: E402
+from server.weights import WeightsUnavailable, first_layer_units, timelapse  # noqa: E402
 from shared import config  # noqa: E402
 from shared.grids import mosaic  # noqa: E402
 from shared.harness import DATA_DIR, WORKSPACE  # noqa: E402
@@ -131,6 +134,25 @@ def run_weights(run_id: str, kind: str = "features"):
     try:
         return first_layer_units(get_run(run_id).dir, kind)
     except WeightsUnavailable as e:
+        raise HTTPException(404, str(e)) from e
+
+
+@app.get("/api/runs/{run_id}/timelapse")
+def run_timelapse(run_id: str):
+    try:
+        return timelapse(get_run(run_id).dir)
+    except WeightsUnavailable as e:
+        raise HTTPException(404, str(e)) from e
+
+
+@app.get("/api/runs/{run_id}/onestep")
+def run_onestep(run_id: str, start: int = 0):
+    run = get_run(run_id)
+    if run.status != "done":
+        raise HTTPException(400, "Only a run that finished training can be taken apart.")
+    try:
+        return one_step(run.dir, start)
+    except ValueError as e:
         raise HTTPException(404, str(e)) from e
 
 

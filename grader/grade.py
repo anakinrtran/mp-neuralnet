@@ -105,7 +105,8 @@ def predict(code: Path, weights: Path) -> dict:
         shutil.chown(work, SANDBOX_USER)
         for f in work.iterdir():
             shutil.chown(f, SANDBOX_USER)
-    env = {"PATH": os.environ.get("PATH", ""), "MPNN_DATA": str(DATA_DIR), "HOME": str(work)}
+    env = {"PATH": os.environ.get("PATH", ""), "MPNN_DATA": str(DATA_DIR), "HOME": str(work),
+           "MPNN_WORKSPACE": WORKSPACE.id}
     if "SYSTEMROOT" in os.environ:  # Windows (local testing) can't start Python without it
         env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
     try:
@@ -137,6 +138,8 @@ def main():
     if "error" in result:
         not_gradable(result["error"])
         return
+    if result.get("workspace") != WORKSPACE.id:  # it must decode the same practice grid
+        raise RuntimeError(f"predict.py decoded {result.get('workspace')}'s practice grid, not {WORKSPACE.id}'s.")
     pred = np.array(result["pred"])
     if pred.shape != labels.shape:
         not_gradable("The submitted model gave the wrong number of predictions.")

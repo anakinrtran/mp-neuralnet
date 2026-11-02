@@ -48,6 +48,8 @@ TRAIN_PER_CLASS = int(os.environ.get("MPNN_TRAIN_PER_CLASS", config.TRAIN_PER_CL
 EVAL_BATCH = 1024
 STEP_EVENTS_PER_EPOCH = 40
 VAL_EVENTS_PER_EPOCH = 4
+TIMELAPSE_SNAPSHOTS = 10  # of the first Conv layer, saved to timelapse.npz
+TIMELAPSE_FILTERS = 16
 
 # mode is "run" (train for real) or "load" (grader: load saved weights, skip training)
 _state = {"mode": "run", "run_dir": Path("run"), "weights": None, "model": None}
@@ -100,6 +102,7 @@ def train(model, train_data, val_data, epochs=WORKSPACE.default_epochs):
 
     emit("train_start", epochs=epochs, steps_per_epoch=steps_per_epoch,
          parameters=sum(p.numel() for p in model.parameters()))
+    snapshot = _timelapse_recorder(model, val_data, epochs * steps_per_epoch)
     start = time.perf_counter()
     for epoch in range(epochs):
         running, count = 0.0, 0
@@ -112,6 +115,7 @@ def train(model, train_data, val_data, epochs=WORKSPACE.default_epochs):
             running += loss.item()
             count += 1
             progress = epoch + i / steps_per_epoch
+            snapshot(epoch * steps_per_epoch + i, progress)
             if i % step_every == 0:
                 emit("step", progress=round(progress, 4), loss=round(running / count, 4))
                 running, count = 0.0, 0
@@ -120,7 +124,36 @@ def train(model, train_data, val_data, epochs=WORKSPACE.default_epochs):
         emit("epoch", epoch=epoch + 1, seconds=round(time.perf_counter() - start, 2))
 
     torch.save(model.state_dict(), _state["run_dir"] / "model.pt")
+    snapshot.save(_state["run_dir"] / "timelapse.npz")
     emit("train_done", seconds=round(time.perf_counter() - start, 2))
+
+
+def _timelapse_recorder(model, val_data, total_steps):
+    """Records the first Conv layer's filters, and their outputs on one sample character,
+    at TIMELAPSE_SNAPSHOTS steps (closer together early on, when filters change fastest).
+    Call it every step; it does nothing for models without a Conv layer."""
+    conv = next((m for m in model.modules() if isinstance(m, nn.Conv2d)), None)
+    images, labels = val_data.tensors
+    sample = images[labels.tolist().index(CLASSES.index("A"))][None]  # (1, 1, 28, 28)
+    steps = {round(total_steps * (k / (TIMELAPSE_SNAPSHOTS - 1)) ** 2) for k in range(TIMELAPSE_SNAPSHOTS)}
+    snaps = []
+
+    def snapshot(step, progress):
+        if conv is not None and step in steps:
+            with torch.no_grad():
+                snaps.append((progress, conv.weight[:TIMELAPSE_FILTERS, 0].clone(),
+                              conv(sample)[0, :TIMELAPSE_FILTERS].clone()))
+
+    def save(path):
+        if snaps:
+            np.savez_compressed(path, progress=np.array([s[0] for s in snaps]),
+                                filters=torch.stack([s[1] for s in snaps]).numpy(),
+                                outputs=torch.stack([s[2] for s in snaps]).numpy(),
+                                sample=sample[0, 0].numpy())
+
+    snapshot.save = save
+    snapshot(0, 0.0)
+    return snapshot
 
 
 def evaluate(model, val_data):
@@ -217,6 +250,23 @@ def load_trained_model(code_path, weights_path):
     return _state["model"]
 
 
+def _cpu_limit() -> int:
+    """CPUs this process may really use: the container's CPU quota if it has one. PrairieLearn
+    caps workspaces (0.9 CPU locally) while they still see every core, and torch's default
+    thread count then oversubscribes the cap (a CNN run took 12x longer)."""
+    cg = Path("/sys/fs/cgroup")
+    try:
+        if (cg / "cpu.max").exists():  # cgroup v2: "max 100000" or "90000 100000"
+            quota, period = (cg / "cpu.max").read_text().split()
+        else:  # cgroup v1 (e.g. Docker Desktop): quota -1 means no limit
+            quota, period = ((cg / "cpu" / f).read_text().strip() for f in ("cpu.cfs_quota_us", "cpu.cfs_period_us"))
+        if quota not in ("max", "-1"):
+            return max(1, int(quota) // int(period))
+    except (OSError, ValueError):
+        pass  # no cgroup files (e.g. Windows): no quota
+    return os.cpu_count() or 1
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run generated model code.")
     parser.add_argument("code", type=Path)
@@ -230,8 +280,7 @@ def main():
     sys.modules["harness"] = sys.modules[__name__]
     args.run_dir.mkdir(parents=True, exist_ok=True)
     _state.update(mode="run", run_dir=args.run_dir)
-    if args.threads:
-        torch.set_num_threads(args.threads)
+    torch.set_num_threads(args.threads or _cpu_limit())
     torch.manual_seed(args.seed)
 
     start = time.perf_counter()
