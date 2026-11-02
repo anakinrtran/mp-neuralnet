@@ -1,7 +1,9 @@
-"""Grade Workspace 1 runs the way the grader will: rebuild the model from its code, load the
+"""Grade runs the way the grader will: rebuild the model from its code, load the
 saved weights (no retraining), decode the practice grid and score it against the private labels.
 
-  python scripts/grade_run.py runs/20261101-190602 [more run dirs] [--image out.png]
+  python scripts/grade_run.py runs/ws1/20261101-190602 [more run dirs] [--image out.png]
+
+The workspace comes from MPNN_WORKSPACE (default ws1).
 
 Staff only: it reads the private practice labels. --image writes, for each run,
 decoded | answer | wrong pixels (red), scaled up.
@@ -18,11 +20,11 @@ from PIL import Image
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from shared import config, harness  # noqa: E402
+from shared import harness  # noqa: E402
 from shared.grids import classes_to_image, upscale  # noqa: E402
 from shared.palette import VISIBLE_GROUP  # noqa: E402
 
-LABELS = REPO / "data" / "processed" / "private" / "practice_ws1.npz"
+LABELS = REPO / "data" / "processed" / "private" / harness.WORKSPACE.practice_file
 SCALE = 8
 
 
@@ -35,7 +37,7 @@ def grade(run_dir: Path, labels: np.ndarray) -> dict:
         "layers": harness.describe_layers(model),
         "raw": float((pred == labels).mean()),
         "visible": visible,
-        "passed": visible >= config.PRACTICE_THRESHOLD,
+        "passed": visible >= harness.WORKSPACE.threshold,
         # the image the student saw must be the one the grader scores
         "matches_decoded": bool(np.array_equal(np.load(saved), pred)) if saved.exists() else None,
         "pred": pred,
@@ -59,7 +61,7 @@ def main():
 
     labels = np.load(LABELS)["y"]
     rows = []
-    print(f"threshold: {config.PRACTICE_THRESHOLD:.2f} visible accuracy")
+    print(f"{harness.WORKSPACE.id} threshold: {harness.WORKSPACE.threshold:.2f} visible accuracy")
     for run_dir in args.runs:
         r = grade(run_dir, labels)
         seconds = json.loads((run_dir / "summary.json").read_text()).get("seconds")

@@ -28,9 +28,8 @@ from PIL import Image
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from shared import config  # noqa: E402
 from shared.grids import classes_to_image, upscale  # noqa: E402
-from shared.harness import DATA_DIR  # noqa: E402
+from shared.harness import DATA_DIR, WORKSPACE  # noqa: E402
 from shared.palette import VISIBLE_GROUP  # noqa: E402
 
 GRADE = Path(os.environ.get("GRADE_DIR", "/grade"))
@@ -41,6 +40,18 @@ SANDBOX_USER = "ag"  # created in the grader Dockerfile
 PREDICT_TIMEOUT = 45
 SCALE = 8
 AS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
+
+
+def ws1_hint(layers: list[str]) -> str:
+    if sum(name.startswith("Linear") for name in layers) == 1:
+        return ("A linear model can't reach this. Add a hidden layer: "
+                "Flatten → Linear 128 → ReLU → Linear 36, run it, Submit, and grade again.")
+    return ("Check that a ReLU comes right after your hidden Linear layer, "
+            "or try more epochs. Then run, Submit, and grade again.")
+
+
+# What to suggest when a submission falls short, per workspace, given the model's layer names.
+FAIL_HINTS = {"ws1": ws1_hint}
 
 
 def write_results(results: dict):
@@ -62,7 +73,7 @@ def load_labels() -> np.ndarray:
     """Read the labels, check they belong to the baked-in characters, then lock them away."""
     with np.load(TESTS / "practice_labels.npz") as f:
         labels, want = f["y"], str(f["x_sha256"])
-    chars = np.load(DATA_DIR / "practice_ws1.npz")["x"]
+    chars = np.load(DATA_DIR / WORKSPACE.practice_file)["x"]
     if hashlib.sha256(np.ascontiguousarray(chars, dtype=np.uint8).tobytes()).hexdigest() != want:
         raise RuntimeError("Grader setup error: practice labels don't match the practice characters "
                            "in the grader image. Rebuild both from data/make_practice.py.")
@@ -120,19 +131,15 @@ def main():
     wrong = VISIBLE_GROUP[pred] != VISIBLE_GROUP[labels]
     visible = 1 - wrong.mean()
     raw = (pred == labels).mean()
-    passed = visible >= config.PRACTICE_THRESHOLD
-    needed = config.PRACTICE_THRESHOLD
+    passed = visible >= WORKSPACE.threshold
+    needed = WORKSPACE.threshold
     summary = (f"{visible:.1%} of the practice image's pixels have the right color "
                f"(you need {needed:.0%}). {int(wrong.sum())} of {wrong.size} pixels are wrong.")
     layers = result["layers"]
     if passed:
         message = "Passed. " + summary
-    elif sum(name.startswith("Linear") for name in layers) == 1:
-        message = ("Not yet. " + summary + " A linear model can't reach this. Add a hidden layer: "
-                   "Flatten → Linear 128 → ReLU → Linear 36, run it, Submit, and grade again.")
     else:
-        message = ("Not yet. " + summary + " Check that a ReLU comes right after your hidden Linear layer, "
-                   "or try more epochs. Then run, Submit, and grade again.")
+        message = "Not yet. " + summary + " " + FAIL_HINTS[WORKSPACE.id](layers)
 
     model_line = " → ".join(layers)
     val = info.get("val_accuracy")

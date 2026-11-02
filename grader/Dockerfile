@@ -1,4 +1,5 @@
-# External grader for MP NeuralNet. Labels are not in the image: PrairieLearn mounts them
+# External grader for every MP NeuralNet workspace; each question sets MPNN_WORKSPACE
+# in externalGradingOptions.environment. Labels are not in the image: PrairieLearn mounts them
 # from the question's tests/ directory at /grade/tests.
 # Build from the repo root:
 #   docker build --platform linux/amd64 -f grader/Dockerfile -t IMAGE .
@@ -7,7 +8,7 @@ FROM python:3.13-slim
 COPY requirements.txt /opt/mpnn/requirements.txt
 RUN pip install --no-cache-dir -r /opt/mpnn/requirements.txt
 
-COPY data/processed/public/practice_ws1.npz /opt/mpnn/data/
+COPY data/processed/public/practice_*.npz /opt/mpnn/data/
 COPY shared/ /opt/mpnn/shared/
 COPY grader/grade.py grader/predict.py /opt/mpnn/grader/
 

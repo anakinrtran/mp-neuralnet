@@ -39,10 +39,11 @@ REPO = Path(__file__).resolve().parent.parent
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from shared import config  # noqa: E402
+from shared import config, workspaces  # noqa: E402
 from shared.palette import CLASSES  # noqa: E402
 
 DATA_DIR = Path(os.environ.get("MPNN_DATA", REPO / "data" / "processed" / "public"))
+WORKSPACE = workspaces.current()
 TRAIN_PER_CLASS = int(os.environ.get("MPNN_TRAIN_PER_CLASS", config.TRAIN_PER_CLASS))
 EVAL_BATCH = 1024
 STEP_EVENTS_PER_EPOCH = 40
@@ -77,10 +78,10 @@ def load_data():
     return train_data, val_data
 
 
-def train(model, train_data, val_data, epochs=config.DEFAULT_EPOCHS):
+def train(model, train_data, val_data, epochs=WORKSPACE.default_epochs):
     """Train with fixed settings (Adam, fixed learning rate and batch size)."""
-    if not isinstance(epochs, int) or not 1 <= epochs <= config.MAX_EPOCHS:
-        raise StudentError(f"Epochs must be a whole number from 1 to {config.MAX_EPOCHS}.")
+    if not isinstance(epochs, int) or not 1 <= epochs <= WORKSPACE.max_epochs:
+        raise StudentError(f"Epochs must be a whole number from 1 to {WORKSPACE.max_epochs}.")
     check_model(model)
     _state["model"] = model
 
@@ -187,7 +188,7 @@ def accuracy(model, data: TensorDataset) -> float:
 
 def predict_practice(model) -> np.ndarray:
     """Predicted class for every practice character, as an (H, W) grid."""
-    chars = np.load(DATA_DIR / "practice_ws1.npz")["x"]
+    chars = np.load(DATA_DIR / WORKSPACE.practice_file)["x"]
     h, w = chars.shape[:2]
     images = torch.from_numpy(chars.reshape(-1, 28, 28)).float().div_(255).unsqueeze(1)
     return predict(model, images).reshape(h, w)

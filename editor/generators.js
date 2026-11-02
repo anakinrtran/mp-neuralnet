@@ -60,11 +60,12 @@ function stackOf(first) {
 }
 
 /**
- * Check the program before running it.
+ * Check the program before running it. checkModel is the workspace's check of the
+ * layers inside the Model block.
  * Returns problems (block the run), hints (likely mistakes that still run) and notes
  * (next steps), all in plain language.
  */
-export function checkProgram(workspace, cfg) {
+export function checkProgram(workspace, cfg, checkModel) {
   const problems = [];
   const hints = [];
   const notes = [];
@@ -89,33 +90,9 @@ export function checkProgram(workspace, cfg) {
 
   const modelBlock = workspace.getBlocksByType("model", false)[0];
   if (modelBlock && at("model") >= 0) {
-    const layers = stackOf(modelBlock.getInputTargetBlock("LAYERS"));
-    const linears = layers.filter((b) => b.type === "linear");
-    const last = layers[layers.length - 1];
-    if (layers.length === 0) {
-      problems.push("The Model is empty. Put Flatten and Linear blocks inside it.");
-    } else {
-      if (layers[0].type !== "flatten") {
-        problems.push("Put Flatten first in the Model: Linear layers need each image as a flat list of numbers.");
-      }
-      if (linears.length === 0) {
-        problems.push("The Model needs at least one Linear layer.");
-      } else if (last.type !== "linear" || last.getFieldValue("OUTPUTS") !== cfg.num_classes) {
-        problems.push(`The last layer must be Linear with ${cfg.num_classes} outputs (one score per class).`);
-      }
-      layers.forEach((b, i) => {
-        if (b.type === "relu" && layers[i - 1]?.type !== "linear" && i < layers.length - 1) {
-          hints.push("A ReLU only helps right after a Linear layer. Here it changes nothing " +
-            "(after Flatten, every number is already 0 or more). Put a Linear block above it to make a hidden layer.");
-        }
-      });
-      for (const b of linears.slice(0, -1)) {
-        const n = b.getFieldValue("OUTPUTS");
-        if (n < cfg.hidden.min || n > cfg.hidden.max) {
-          problems.push(`Hidden Linear layers need ${cfg.hidden.min}–${cfg.hidden.max} outputs (one has ${n}).`);
-        }
-      }
-    }
+    const found = checkModel(stackOf(modelBlock.getInputTargetBlock("LAYERS")), cfg);
+    problems.push(...found.problems);
+    hints.push(...found.hints);
   }
 
   const loose = workspace.getTopBlocks(false).filter((b) => b !== start);
