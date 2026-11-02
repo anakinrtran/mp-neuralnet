@@ -218,3 +218,24 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project data (downloaded / generated, baked into images at build time)
+data/raw/
+data/processed/
+runs/
+submission/
+
+# Answer keys. This repo is public: source images and grading labels never go in git.
+# Keep them in the private course repo; data/make_practice.py regenerates the labels.
+practice_images/
+questions/*/tests/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+.claude/settings.local.json
+
+CLAUDE.md

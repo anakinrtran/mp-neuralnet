@@ -1,0 +1,9 @@
+# Only what the images COPY is needed. Private data and labels must never reach an image.
+*
+!requirements.txt
+!shared/
+!server/
+!editor/
+!grader/
+!data/processed/public/
+**/__pycache__

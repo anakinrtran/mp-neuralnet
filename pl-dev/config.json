@@ -1,0 +1,4 @@
+{
+  "externalGradingPullImagesFromDockerHub": false,
+  "workspacePullImagesFromDockerHub": false
+}

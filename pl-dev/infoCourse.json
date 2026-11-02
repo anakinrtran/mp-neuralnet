@@ -1,0 +1,11 @@
+{
+  "uuid": "c6f1cef4-e11a-412b-9555-ba18e6a812a4",
+  "name": "MPNN-DEV",
+  "title": "MP NeuralNet local test course",
+  "timezone": "America/Chicago",
+  "topics": [{ "name": "Neural networks", "color": "blue1", "description": "MP NeuralNet workspaces" }],
+  "tags": [
+    { "name": "mp-neuralnet", "color": "purple1", "description": "MP NeuralNet" },
+    { "name": "workspace", "color": "gray1", "description": "Uses a workspace" }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "uuid": "737be535-09a6-4422-bd2f-44f27c06b54d",
+  "title": "Workspace 1: Basic network",
+  "topic": "Neural networks",
+  "tags": ["mp-neuralnet", "workspace"],
+  "type": "v3",
+  "singleVariant": true,
+  "workspaceOptions": {
+    "image": "cs124h/mpnn-workspace:ws1",
+    "port": 8080,
+    "home": "/home/student",
+    "rewriteUrl": true,
+    "gradedFiles": ["model.*", "submission.*"],
+    "enableNetworking": false
+  },
+  "gradingMethod": "External",
+  "externalGradingOptions": {
+    "enabled": true,
+    "image": "cs124h/mpnn-grader:ws1",
+    "entrypoint": "python /opt/mpnn/grader/grade.py",
+    "timeout": 60,
+    "enableNetworking": false
+  }
+}

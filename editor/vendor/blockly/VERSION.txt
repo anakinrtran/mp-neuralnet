@@ -1,0 +1,2 @@
+Blockly 11.2.1 (npm package "blockly"), Apache-2.0.
+Vendored because workspaces have no network access. Files: blockly_compressed.js, msg/en.js, media/.
