@@ -1,0 +1,15 @@
+# Text files use LF in the repo and in every checkout, even on Windows with
+# core.autocrlf=true. Shell scripts and Dockerfiles run in Linux containers and Git
+# Bash/WSL, where CRLF breaks them.
+* text=auto eol=lf
+
+# Binary files (git detects most of these anyway; this makes it explicit)
+*.png binary
+*.gif binary
+*.cur binary
+*.mp3 binary
+*.ogg binary
+*.wav binary
+*.npz binary
+*.npy binary
+*.pt binary
