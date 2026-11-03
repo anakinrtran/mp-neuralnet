@@ -5,9 +5,13 @@ Each run lives in RUNS_DIR/<id>/ with:
   model.pt          trained weights (written by the harness)
   practice_pred.npy decoded practice grid (written by the harness)
   summary.json      what the run history panel shows
+
+Every run that finishes training is also copied to SUBMIT_DIR (model.py, model.pt,
+submission.json), so PrairieLearn's Save & Grade always grades the latest finished run.
 """
 
 import json
+import shutil
 import subprocess
 import sys
 import threading
@@ -45,8 +49,9 @@ class Run:
 
 
 class RunManager:
-    def __init__(self, runs_dir: Path):
+    def __init__(self, runs_dir: Path, submit_dir: Path):
         self.runs_dir = runs_dir
+        self.submit_dir = submit_dir
         self.runs_dir.mkdir(parents=True, exist_ok=True)
         self.runs: dict[str, Run] = {}
         self.lock = threading.Lock()
@@ -94,6 +99,8 @@ class RunManager:
             run.status = "done" if code == 0 else "error"
             if code != 0 and not any(e["event"] == "error" for e in run.events):
                 run.events.append({"event": "error", "message": f"The run crashed (exit code {code})."})
+        if run.status == "done" and (run.dir / "model.pt").exists():
+            self._save_for_grading(run)
         run.events.append({"event": "end", "status": run.status})
         self._save(run)
 
@@ -102,6 +109,15 @@ class RunManager:
         if run.status == "running" and run.proc:
             run.status = "stopped"
             run.proc.kill()
+
+    def _save_for_grading(self, run: Run):
+        s = run.summary()
+        info = {"run_id": run.id, "layers": s["layers"], "epochs": s["epochs"],
+                "val_accuracy": s["val_accuracy"], "saved": time.time()}
+        self.submit_dir.mkdir(parents=True, exist_ok=True)
+        for name in ("model.py", "model.pt"):
+            shutil.copyfile(run.dir / name, self.submit_dir / name)
+        (self.submit_dir / "submission.json").write_text(json.dumps(info, indent=2))
 
     def _save(self, run: Run):
         # keep chart events so a reloaded page can redraw them; drop printed output

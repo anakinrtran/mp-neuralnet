@@ -1,6 +1,7 @@
 // Workspace 1: Basic network. Everything here is specific to this workspace; blocks,
 // code generation and the page itself are shared (blocks.js, generators.js, app.js).
 import { categoryToolbox } from "../blocks.js";
+import { hiddenSizeProblems, misplacedReluHints, outputLayerProblems } from "../checks.js";
 
 // Result tabs to show, in order.
 export const TABS = ["steps", "training", "compare", "weights", "practice"];
@@ -16,7 +17,7 @@ export const STEPS = `
       <b>Flatten → Linear 128 → ReLU → Linear 36</b>. Run again, then open <b>Compare runs</b>.</li>
     <li><b>Decode the practice image.</b> From <b>Evaluation</b>, attach <b>Decode practice image</b>
       at the bottom and run. Open <b>Practice image</b> to see what your model read.</li>
-    <li><b>Submit.</b> <span id="submit-note"></span></li>
+    <li><b>Grade.</b> <span id="submit-note"></span></li>
   </ol>`;
 
 export const TOOLBOX = categoryToolbox({
@@ -57,33 +58,16 @@ export const START_STATE = {
  * hints (likely mistakes that still run), in plain language.
  */
 export function checkModel(layers, cfg) {
-  const problems = [];
-  const hints = [];
-  const linears = layers.filter((b) => b.type === "linear");
-  const last = layers[layers.length - 1];
   if (layers.length === 0) {
-    problems.push("The Model is empty. Put Flatten and Linear blocks inside it.");
-    return { problems, hints };
+    return { problems: ["The Model is empty. Put Flatten and Linear blocks inside it."], hints: [] };
   }
+  const problems = [];
   if (layers[0].type !== "flatten") {
     problems.push("Put Flatten first in the Model: Linear layers need each image as a flat list of numbers.");
   }
-  if (linears.length === 0) {
-    problems.push("The Model needs at least one Linear layer.");
-  } else if (last.type !== "linear" || last.getFieldValue("OUTPUTS") !== cfg.num_classes) {
-    problems.push(`The last layer must be Linear with ${cfg.num_classes} outputs (one score per class).`);
-  }
-  layers.forEach((b, i) => {
-    if (b.type === "relu" && layers[i - 1]?.type !== "linear" && i < layers.length - 1) {
-      hints.push("A ReLU only helps right after a Linear layer. Here it changes nothing " +
-        "(after Flatten, every number is already 0 or more). Put a Linear block above it to make a hidden layer.");
-    }
-  });
-  for (const b of linears.slice(0, -1)) {
-    const n = b.getFieldValue("OUTPUTS");
-    if (n < cfg.hidden.min || n > cfg.hidden.max) {
-      problems.push(`Hidden Linear layers need ${cfg.hidden.min}–${cfg.hidden.max} outputs (one has ${n}).`);
-    }
-  }
+  problems.push(...outputLayerProblems(layers, cfg), ...hiddenSizeProblems(layers, cfg));
+  const hints = misplacedReluHints(layers, ["linear"],
+    "A ReLU only helps right after a Linear layer. Here it changes nothing " +
+    "(after Flatten, every number is already 0 or more). Put a Linear block above it to make a hidden layer.");
   return { problems, hints };
 }

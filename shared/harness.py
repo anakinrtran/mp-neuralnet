@@ -48,6 +48,8 @@ TRAIN_PER_CLASS = int(os.environ.get("MPNN_TRAIN_PER_CLASS", config.TRAIN_PER_CL
 EVAL_BATCH = 1024
 STEP_EVENTS_PER_EPOCH = 40
 VAL_EVENTS_PER_EPOCH = 4
+TIMELAPSE_SNAPSHOTS = 10  # of the first Conv layer, saved to timelapse.npz
+TIMELAPSE_FILTERS = 16
 
 # mode is "run" (train for real) or "load" (grader: load saved weights, skip training)
 _state = {"mode": "run", "run_dir": Path("run"), "weights": None, "model": None}
@@ -100,6 +102,7 @@ def train(model, train_data, val_data, epochs=WORKSPACE.default_epochs):
 
     emit("train_start", epochs=epochs, steps_per_epoch=steps_per_epoch,
          parameters=sum(p.numel() for p in model.parameters()))
+    snapshot = _timelapse_recorder(model, val_data, epochs * steps_per_epoch)
     start = time.perf_counter()
     for epoch in range(epochs):
         running, count = 0.0, 0
@@ -112,6 +115,7 @@ def train(model, train_data, val_data, epochs=WORKSPACE.default_epochs):
             running += loss.item()
             count += 1
             progress = epoch + i / steps_per_epoch
+            snapshot(epoch * steps_per_epoch + i, progress)
             if i % step_every == 0:
                 emit("step", progress=round(progress, 4), loss=round(running / count, 4))
                 running, count = 0.0, 0
@@ -120,7 +124,36 @@ def train(model, train_data, val_data, epochs=WORKSPACE.default_epochs):
         emit("epoch", epoch=epoch + 1, seconds=round(time.perf_counter() - start, 2))
 
     torch.save(model.state_dict(), _state["run_dir"] / "model.pt")
+    snapshot.save(_state["run_dir"] / "timelapse.npz")
     emit("train_done", seconds=round(time.perf_counter() - start, 2))
+
+
+def _timelapse_recorder(model, val_data, total_steps):
+    """Records the first Conv layer's filters, and their outputs on one sample character,
+    at TIMELAPSE_SNAPSHOTS steps (closer together early on, when filters change fastest).
+    Call it every step; it does nothing for models without a Conv layer."""
+    conv = next((m for m in model.modules() if isinstance(m, nn.Conv2d)), None)
+    images, labels = val_data.tensors
+    sample = images[labels.tolist().index(CLASSES.index("A"))][None]  # (1, 1, 28, 28)
+    steps = {round(total_steps * (k / (TIMELAPSE_SNAPSHOTS - 1)) ** 2) for k in range(TIMELAPSE_SNAPSHOTS)}
+    snaps = []
+
+    def snapshot(step, progress):
+        if conv is not None and step in steps:
+            with torch.no_grad():
+                snaps.append((progress, conv.weight[:TIMELAPSE_FILTERS, 0].clone(),
+                              conv(sample)[0, :TIMELAPSE_FILTERS].clone()))
+
+    def save(path):
+        if snaps:
+            np.savez_compressed(path, progress=np.array([s[0] for s in snaps]),
+                                filters=torch.stack([s[1] for s in snaps]).numpy(),
+                                outputs=torch.stack([s[2] for s in snaps]).numpy(),
+                                sample=sample[0, 0].numpy())
+
+    snapshot.save = save
+    snapshot(0, 0.0)
+    return snapshot
 
 
 def evaluate(model, val_data):
@@ -168,10 +201,18 @@ def check_model(model):
 
 
 def describe_layers(model) -> list[str]:
-    """Short layer names, e.g. ["Flatten", "Linear(128)", "ReLU", "Linear(36)"]."""
+    """Short layer names, e.g. ["Conv(16)", "ReLU", "MaxPool", "Flatten", "Linear(36)"]."""
     layers = list(model.children()) if isinstance(model, nn.Sequential) else [model]
-    return [f"Linear({m.out_features})" if isinstance(m, nn.Linear) else type(m).__name__
-            for m in layers]
+
+    def name(m):
+        if isinstance(m, nn.Linear):
+            return f"Linear({m.out_features})"
+        if isinstance(m, nn.Conv2d):
+            return f"Conv({m.out_channels})"
+        if isinstance(m, nn.MaxPool2d):
+            return "MaxPool"
+        return type(m).__name__
+    return [name(m) for m in layers]
 
 
 @torch.no_grad()
@@ -209,21 +250,36 @@ def load_trained_model(code_path, weights_path):
     return _state["model"]
 
 
+def _cpu_limit(cg: Path = Path("/sys/fs/cgroup")) -> int:
+    """CPUs this process may really use: the container's CPU quota if it has one. PrairieLearn
+    caps workspaces (0.9 CPU locally) while they still see every core, and torch's default
+    thread count then oversubscribes the cap (a CNN run took 12x longer)."""
+    try:
+        if (cg / "cpu.max").exists():  # cgroup v2: "max 100000" or "90000 100000"
+            quota, period = (cg / "cpu.max").read_text().split()
+        else:  # cgroup v1 (e.g. Docker Desktop): quota -1 means no limit
+            quota, period = ((cg / "cpu" / f).read_text().strip() for f in ("cpu.cfs_quota_us", "cpu.cfs_period_us"))
+        if quota not in ("max", "-1"):
+            return max(1, int(quota) // int(period))
+    except (OSError, ValueError):
+        pass  # no cgroup files (e.g. Windows): no quota
+    return os.cpu_count() or 1
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run generated model code.")
     parser.add_argument("code", type=Path)
     parser.add_argument("--run-dir", type=Path, default=Path("run"))
     parser.add_argument("--seed", type=int, default=0)
-    # 1 thread is fastest for Workspace 1 models (benchmarked) and predictable on shared CPUs
-    parser.add_argument("--threads", type=int, default=1, help="0 = torch default")
+    # threads per workspace (shared/workspaces.py): 1 is fastest for small fully connected models
+    parser.add_argument("--threads", type=int, default=WORKSPACE.threads, help="0 = torch default")
     args = parser.parse_args()
 
     # generated code does "from harness import ..."; make that refer to this module
     sys.modules["harness"] = sys.modules[__name__]
     args.run_dir.mkdir(parents=True, exist_ok=True)
     _state.update(mode="run", run_dir=args.run_dir)
-    if args.threads:
-        torch.set_num_threads(args.threads)
+    torch.set_num_threads(args.threads or _cpu_limit())
     torch.manual_seed(args.seed)
 
     start = time.perf_counter()

@@ -81,7 +81,6 @@ function updateButtons() {
   $("run").disabled = running || check.problems.length > 0;
   $("run").hidden = running;
   $("stop").hidden = !running;
-  $("submit").disabled = running || !latestFinished();
 }
 
 // ---------- tabs ----------
@@ -95,6 +94,8 @@ function showTab(name) {
   for (const p of document.querySelectorAll(".panel")) p.hidden = p.id !== `tab-${name}`;
   if (name === "training") drawCharts();
   if (name === "weights") renderWeights();
+  if (name === "filters") renderFilters();
+  if (name === "onestep") renderOneStep();
 }
 
 function markFresh(name) {
@@ -206,50 +207,41 @@ function finishRun(status, live) {
     if (status === "done") {
       markFresh("compare");
       markFresh("weights");
+      markFresh("filters");
     }
   }
-  refreshHistory();
+  refreshHistory().then(refreshSubmission);
 }
 
 setInterval(() => {
   if (running) $("status").textContent = `Running… ${Math.round((Date.now() - runStarted) / 1000)}s`;
 }, 500);
 
-// ---------- submit ----------
+// ---------- grading ----------
+// Every finished run is saved for grading by the server; this shows which one.
 
-const latestFinished = () => history.filter((r) => r.status === "done").pop();
 const runNumber = (id) => history.findIndex((r) => r.id === id) + 1;
 
-async function submitLatest() {
-  const run = latestFinished();
-  if (!run) return;
-  try {
-    ({ submission } = await api("api/submission", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ run_id: run.id }),
-    }));
-  } catch (e) {
-    $("status").textContent = e.message;
-    return;
-  }
-  $("status").textContent = `Submitted run ${runNumber(run.id)}.`;
-  showSubmission();
-  refreshHistory();
-  showTab("steps");
-}
-
-function showSubmission() {
+async function refreshSubmission() {
+  ({ submission } = await api("api/submission").catch(() => ({ submission: null })));
+  const chip = $("graded");
   const note = $("submit-note");
   if (!submission) {
-    note.innerHTML = "Click <b>Submit</b> at the top. It saves your latest finished run for grading.";
+    chip.textContent = "";
+    if (note) note.textContent = "Finish a run first. Every finished run is saved for grading.";
     return;
   }
   const n = runNumber(submission.run_id);
-  note.innerHTML = `<span class="ok">✓ Submitted run ${n || ""} ` +
-    `(${layersText(submission.layers)}, ${pct(submission.val_accuracy)} validation accuracy).</span> ` +
-    "Now go back to the PrairieLearn question page and click <b>Save &amp; Grade</b>. " +
-    "To submit a better model later, run it and click Submit again.";
+  chip.textContent = `Save & Grade grades run ${n} · ${pct(submission.val_accuracy)}`;
+  if (note) {
+    note.innerHTML = `<span class="ok">✓ Run ${n} is saved for grading ` +
+      `(${layersText(submission.layers)}, ${pct(submission.val_accuracy)} validation accuracy).</span> ` +
+      "Go back to the PrairieLearn question page and click <b>Save &amp; Grade</b>. " +
+      "Each new finished run replaces it.";
+  }
+  for (const td of document.querySelectorAll("#history .badge")) td.remove();
+  document.querySelector(`#history tr[data-run="${submission.run_id}"] td:last-child`)
+    ?.insertAdjacentHTML("beforeend", ' <span class="badge">graded</span>');
 }
 
 // ---------- charts ----------
@@ -384,15 +376,16 @@ async function refreshHistory() {
     $("compare-cards").innerHTML = card("First run", first) + card("Latest run", latest, delta);
   }
   $("history").querySelector("tbody").innerHTML = history.map((r, i) => `
-    <tr>
+    <tr data-run="${r.id}">
       <td>${i + 1}</td>
       <td>${layersText(r.layers)}</td>
       <td class="num">${r.epochs ?? "—"}</td>
       <td class="num">${r.val_accuracy != null ? pct(r.val_accuracy) : "—"}</td>
-      <td>${r.status}${submission?.run_id === r.id ? ' <span class="badge">submitted</span>' : ""}</td>
+      <td>${r.status}${submission?.run_id === r.id ? ' <span class="badge">graded</span>' : ""}</td>
     </tr>`).join("");
   updateButtons();
   if (!$("tab-weights").hidden) renderWeights();
+  if (!$("tab-filters").hidden) renderFilters();
 }
 
 // ---------- weights ----------
@@ -451,12 +444,12 @@ async function renderWeights() {
   });
 }
 
-function weightCanvas(values) {
+function weightCanvas(values, size = 28) {
   const c = document.createElement("canvas");
-  c.width = 28;
-  c.height = 28;
+  c.width = size;
+  c.height = size;
   const ctx = c.getContext("2d");
-  const img = ctx.createImageData(28, 28);
+  const img = ctx.createImageData(size, size);
   const pos = [192, 57, 43];
   const neg = [46, 111, 181];
   values.forEach((v, i) => {
@@ -467,6 +460,181 @@ function weightCanvas(values) {
   });
   ctx.putImageData(img, 0, 0);
   return c;
+}
+
+// ---------- filter timelapse ----------
+
+let timelapse = null; // { runId, data }
+
+async function renderFilters() {
+  const run = history.filter((r) => r.status === "done" && (r.layers || []).some((l) => l.startsWith("Conv"))).pop();
+  const note = $("filters-note");
+  if (!run) {
+    $("filters-view").hidden = true;
+    note.textContent = "Run a model with a Conv block, then come back to watch its filters learn.";
+    return;
+  }
+  if (timelapse?.runId !== run.id) {
+    try {
+      timelapse = { runId: run.id, data: await api(`api/runs/${run.id}/timelapse`) };
+    } catch (e) {
+      note.textContent = e.message;
+      return;
+    }
+    const slider = $("filters-slider");
+    slider.max = timelapse.data.progress.length - 1;
+    slider.value = slider.max;
+    drawSample(timelapse.data.sample);
+  }
+  note.textContent = `Run ${runNumber(run.id)}: the first Conv layer's filters (small squares) and what each ` +
+    "one finds in the sample character (larger squares). Red means a strong match, blue the opposite. " +
+    "Drag the slider to watch them change during training.";
+  $("filters-view").hidden = false;
+  drawSnapshot();
+}
+
+function drawSample(pixels) {
+  const ctx = $("filters-sample").getContext("2d");
+  const img = ctx.createImageData(28, 28);
+  pixels.flat().forEach((v, i) => img.data.set([255 - v, 255 - v, 255 - v, 255], i * 4));
+  ctx.putImageData(img, 0, 0);
+}
+
+function drawSnapshot() {
+  const { progress, filters, outputs } = timelapse.data;
+  const k = Number($("filters-slider").value);
+  $("filters-when").textContent = k === 0 ? "before training" : `after ${progress[k].toFixed(2)} epochs`;
+  const grid = $("filters-grid");
+  grid.innerHTML = "";
+  filters[k].forEach((kernel, f) => {
+    const fig = document.createElement("figure");
+    const kc = weightCanvas(kernel.flat(), 3);
+    const oc = weightCanvas(outputs[k][f].flat(), 28);
+    kc.className = "kernel";
+    oc.className = "output";
+    fig.append(kc, oc, `${f + 1}`);
+    grid.appendChild(fig);
+  });
+}
+
+// ---------- one training step ----------
+
+let oneStep = null; // { runId, data, stage }
+
+async function renderOneStep(start = 0) {
+  const run = history.filter((r) => r.status === "done").pop();
+  if (!run) {
+    $("onestep-view").hidden = true;
+    $("onestep-note").textContent = "Finish a run first, then come back to take one training step apart.";
+    return;
+  }
+  if (oneStep?.runId !== run.id || start) {
+    $("onestep-note").textContent = "Loading…";
+    try {
+      oneStep = { runId: run.id, data: await api(`api/runs/${run.id}/onestep?start=${start}`), stage: 1 };
+    } catch (e) {
+      $("onestep-note").textContent = e.message;
+      return;
+    }
+  }
+  $("onestep-note").textContent = "Training is a loop repeated thousands of times: guess, measure the " +
+    "mistake, find which weights caused it, nudge them. Here is one pass of that loop, using your " +
+    `model from run ${runNumber(run.id)} on a validation character it gets wrong. Click Next ▶ to go on.`;
+  $("onestep-view").hidden = false;
+  drawStages();
+}
+
+function grayCanvas(pixels, color = null) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 28;
+  const ctx = c.getContext("2d");
+  const img = ctx.createImageData(28, 28);
+  pixels.flat().forEach((v, i) => {
+    // color: a heatmap from white to red (v in 0..100, square root to show weak spots too);
+    // else dark ink on white (v in 0..255)
+    const heat = 255 * (1 - Math.sqrt(v / 100));
+    const px = color ? [255, heat, heat] : [255 - v, 255 - v, 255 - v];
+    img.data.set([...px, 255], i * 4);
+  });
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+const caption = (text) => `<figure><figcaption>${text}</figcaption></figure>`;
+
+function guessBars(top, label) {
+  return '<div class="bars">' + top.map(([cls, p]) =>
+    `<span class="${cls === label ? "right" : ""}">${cls}</span><div class="bar" style="width:${p * 100}%"></div>` +
+    `<span>${pct(p)}</span>`).join("") + "</div>";
+}
+
+function drawStages() {
+  const d = oneStep.data;
+  const max = Math.max(...d.layers.flatMap((l) => [l.change, l.batch_change]));
+  const n = (v) => v.toLocaleString("en-US");
+  const guess = d.before[0][0];
+  const steps = Math.ceil(d.train_size / d.batch);
+  // Words here are limited to what lectures 1–2 teach (LECTURES.md): no softmax, batch,
+  // learning rate or optimizer yet.
+  const stages = [
+    "<b>Forward: the guess.</b> The character flows down through the blocks in your Model, " +
+      "top to bottom. The Conv layers look for small patterns like edges and curves, Flatten lines " +
+      "everything up, and the Linear layers combine the patterns into a score for each of the 36 " +
+      "characters. Here are the five it's most sure about:" +
+      `<div class="figs">${caption("the character")}</div>${guessBars(d.before, d.label)}` +
+      `<p>It says <b>${guess}</b>, but this is a <b>${d.label}</b>. Look at the character: can you ` +
+      "see why it might be confused?</p>",
+    "<b>Score the mistake (the loss).</b> To get better, the model needs to know how wrong it was, " +
+      "as a single number: the <i>loss</i>. It's close to 0 when the model is sure of the right " +
+      "answer, and it grows the less sure the model is." +
+      `<p>The model was only ${pct(d.true_before)} sure of ${d.label}, so the loss is ` +
+      `<b>${d.loss.toFixed(2)}</b>. This is the same loss you watched go down in the Training tab, ` +
+      "averaged over many characters there. Training's only goal is to push that number down.</p>",
+    `<b>Backward: who's to blame? (backpropagation)</b> Your model has <b>${n(d.weights)} weights</b> ` +
+      "spread across its layers. Which ones caused this mistake? Backpropagation sends the blame " +
+      "backward through the same blocks, from the last layer up to the first. Every weight gets a " +
+      "<i>gradient</i>, which says which way the weight should move to lower the loss and how much " +
+      "it matters." +
+      "<p>The blame can be traced all the way back to the character's pixels. Red shows where the " +
+      `model was “looking” when it went wrong. Are those the strokes that tell a ${d.label} apart ` +
+      `from a ${guess}?</p>` +
+      `<div class="figs">${caption("the character")}${caption("where the blame lands")}</div>`,
+    "<b>Nudge every weight.</b> Every weight moves a small step the way its gradient points, so " +
+      "next time the guess should be a little better. Every layer gets nudged, from the Conv filters " +
+      "at the top to the last Linear layer. That's how the filters in the <b>Filters</b> tab grew " +
+      "from noise into pattern finders: one tiny nudge at a time." +
+      `<p>The model doesn't learn from one character at a time, though. It looks at a group of ` +
+      `${d.batch} characters together and moves the way that helps the whole group. ` +
+      "Each pair of bars shows how far one of your layers moves: " +
+      "<span class=\"key alt\"></span> for this character alone, " +
+      "<span class=\"key\"></span> for the group that includes it.</p>" +
+      '<div class="bars">' + d.layers.map((l) =>
+        `<span>${l.name}</span><div class="bar alt" style="width:${(l.change / max) * 100}%"></div>` +
+        "<span>alone</span>" +
+        `<span></span><div class="bar" style="width:${(l.batch_change / max) * 100}%"></div>` +
+        "<span>in the group</span>").join("") + "</div>" +
+      "<p>Alone, one odd character would yank the weights toward itself and could undo what the model " +
+      `learned about other characters. In the group, it's one voice out of ${d.batch}. Do the first ` +
+      "layers move as much as the last ones?</p>",
+    `<b>Did it help?</b> The model went from ${pct(d.true_before)} to <b>${pct(d.true_after)}</b> sure ` +
+      `of ${d.label}. ` +
+      (d.true_after < d.true_before
+        ? "It got worse! The step was the best move for the group, not for this one character. " +
+          "Mistakes that keep coming up still get fixed over many steps."
+        : "It moved the right way: a step that helps the group usually helps most of its characters too.") +
+      `<div>${guessBars(d.after, d.label)}</div>` +
+      `<p>That's one step. One epoch is ${n(steps)} steps like it, covering all ${n(d.train_size)} ` +
+      "training characters once. Every run you've started was this loop over and over: guess, score " +
+      "the mistake, send the blame backward, nudge every weight. Workspace 3 is about the choices " +
+      "inside this loop, like how big each nudge is and how many characters go in a group.</p>",
+  ];
+  const list = $("onestep-stages");
+  list.innerHTML = stages.slice(0, oneStep.stage).map((s) => `<li>${s}</li>`).join("");
+  const figs = list.querySelectorAll(".figs figure");
+  figs[0].prepend(grayCanvas(d.image));
+  figs[1]?.prepend(grayCanvas(d.image));
+  figs[2]?.prepend(grayCanvas(d.saliency, "red"));
+  $("onestep-next").disabled = oneStep.stage >= stages.length;
 }
 
 // ---------- practice image ----------
@@ -557,18 +725,19 @@ async function main() {
   $("run").onclick = startRun;
   $("stop").onclick = () => shownRun && api(`api/runs/${shownRun}/stop`, { method: "POST" });
   $("reset").onclick = () => {
-    if (confirm("Replace your blocks with the starting linear model?")) {
+    if (confirm("Replace your blocks with this workspace's starting blocks?")) {
       workspace.clear();
       loadBlocks(ws.START_STATE);
     }
   };
   $("practice-canvas").addEventListener("mousemove", hoverPractice);
-  $("submit").onclick = submitLatest;
+  $("filters-slider").addEventListener("input", drawSnapshot);
+  $("onestep-next").onclick = () => { oneStep.stage++; drawStages(); };
+  $("onestep-another").onclick = () => renderOneStep(oneStep.data.index + 1);
 
   // Pick up where we left off: reattach to a run in progress, or show the latest one.
-  ({ submission } = await api("api/submission").catch(() => ({ submission: null })));
   await refreshHistory();
-  showSubmission();
+  await refreshSubmission();
   const active = history.find((r) => r.status === "running");
   const latest = history[history.length - 1];
   if (active) {

@@ -23,6 +23,9 @@ class Workspace:
     threshold: float
     default_epochs: int
     max_epochs: int
+    # Torch threads for training; 0 = torch's default (all cores). One thread is fastest
+    # for small fully connected models; convolutions gain from more.
+    threads: int = 1
 
     @property
     def practice_file(self) -> str:
@@ -45,6 +48,19 @@ WORKSPACES = {ws.id: ws for ws in [
         threshold=0.885,
         default_epochs=5,
         max_epochs=10,
+    ),
+    Workspace(
+        id="ws2",
+        title="Convolutional network",
+        question="ws2-cnn",
+        practice_image="workspace2_sea.png",
+        # Baselines (sea, 2 epochs, 3 seeds): WS1 model 88.9-90.3%, one Conv stage 92.1-93.5%,
+        # two Conv stages 94.3-96.2% (one stage: 92.0% under PrairieLearn's CPU cap). The grader also
+        # requires a Conv layer, so 0.90 only has to catch a CNN that didn't train properly.
+        threshold=0.90,
+        default_epochs=2,
+        max_epochs=4,
+        threads=0,
     ),
 ]}
 

@@ -17,7 +17,7 @@
     <button id="stop" hidden>■ Stop</button>
     <span id="status" class="muted" role="status"></span>
     <span class="spacer"></span>
-    <button id="submit" disabled title="Save your latest finished run for grading">Submit</button>
+    <span id="graded" class="graded" title="Every finished run is saved for grading"></span>
     <button id="reset" class="quiet" title="Go back to the starting linear model">Reset blocks</button>
   </header>
 
@@ -39,6 +39,8 @@
           <button role="tab" data-tab="training">Training</button>
           <button role="tab" data-tab="compare">Compare runs</button>
           <button role="tab" data-tab="weights">Weights</button>
+          <button role="tab" data-tab="filters">Filters</button>
+          <button role="tab" data-tab="onestep">One step</button>
           <button role="tab" data-tab="practice">Practice image</button>
         </nav>
 
@@ -76,6 +78,33 @@
           <p class="legend"><span class="swatch neg"></span> negative weight
             <span class="swatch zero"></span> 0
             <span class="swatch pos"></span> positive weight</p>
+        </div>
+
+        <div class="panel" id="tab-filters" hidden>
+          <p id="filters-note" class="note"></p>
+          <div id="filters-view" hidden>
+            <label class="timelapse">
+              <input type="range" id="filters-slider" min="0" value="0">
+              <span id="filters-when" class="muted"></span>
+            </label>
+            <figure class="sample"><canvas id="filters-sample" width="28" height="28"></canvas>
+              <figcaption>Sample character</figcaption></figure>
+            <div id="filters-grid" class="filters"></div>
+          </div>
+          <p class="legend"><span class="swatch neg"></span> negative
+            <span class="swatch zero"></span> 0
+            <span class="swatch pos"></span> positive</p>
+        </div>
+
+        <div class="panel" id="tab-onestep" hidden>
+          <p id="onestep-note" class="note"></p>
+          <div id="onestep-view" hidden>
+            <div class="onestep-controls">
+              <button id="onestep-next" class="primary">Next ▶</button>
+              <button id="onestep-another" class="quiet">Another mistake</button>
+            </div>
+            <ol id="onestep-stages" class="stages"></ol>
+          </div>
         </div>
 
         <div class="panel" id="tab-practice" hidden>

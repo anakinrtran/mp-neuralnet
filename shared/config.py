@@ -11,4 +11,9 @@ HIDDEN_DEFAULT = 128
 HIDDEN_MIN = 16
 HIDDEN_MAX = 512
 
+# Filter count limits for the Conv block (Workspace 2 on). Filters are always 3x3.
+CONV_DEFAULT = 16
+CONV_MIN = 4
+CONV_MAX = 64
+
 NUM_CLASSES = 36
