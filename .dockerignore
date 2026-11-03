@@ -6,4 +6,5 @@
 !editor/
 !grader/
 !data/processed/public/
+!data/processed/grader/
 **/__pycache__

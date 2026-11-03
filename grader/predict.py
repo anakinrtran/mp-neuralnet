@@ -1,4 +1,5 @@
-"""Rebuild the submitted model, load its weights and print its practice-grid predictions.
+"""Rebuild the submitted model, load its weights and print its predictions for the workspace's
+graded grid (the practice grid, or a held-out/hidden grid baked only into the grader image).
 
     python predict.py model.py model.pt
 
@@ -21,7 +22,8 @@ def main():
     harness.torch.set_num_threads(harness._cpu_limit())
     try:
         model = harness.load_trained_model(code, weights)
-        result = {"pred": harness.predict_practice(model).tolist(), "layers": harness.describe_layers(model),
+        pred = harness.predict_grid(model, harness.DATA_DIR / harness.WORKSPACE.graded_file)
+        result = {"pred": pred.tolist(), "layers": harness.describe_layers(model),
                   "workspace": harness.WORKSPACE.id}
     except harness.StudentError as e:
         result = {"error": str(e)}

@@ -42,7 +42,11 @@
           <button role="tab" data-tab="filters">Filters</button>
           <button role="tab" data-tab="gradients">Gradients</button>
           <button role="tab" data-tab="onestep">One step</button>
+          <button role="tab" data-tab="confusion">Confusion matrix</button>
+          <button role="tab" data-tab="mistakes">Worst mistakes</button>
           <button role="tab" data-tab="practice">Practice image</button>
+          <button role="tab" data-tab="upload">Your image</button>
+          <button role="tab" data-tab="card">Model card</button>
         </nav>
 
         <div class="panel" id="tab-steps"><!-- filled from the workspace module --></div>
@@ -54,9 +58,14 @@
             <canvas id="loss-chart" height="150"></canvas>
           </figure>
           <figure class="chart">
-            <figcaption>Validation accuracy <span class="value" id="acc-value"></span></figcaption>
+            <figcaption><span id="acc-title">Validation accuracy</span> <span class="value" id="acc-value"></span></figcaption>
             <canvas id="acc-chart" height="150"></canvas>
+            <div id="acc-legend" class="line-legend" hidden>
+              <span style="--line-color:var(--chart-line)">validation</span>
+              <span style="--line-color:var(--chart-line-2)">training</span>
+            </div>
           </figure>
+          <p id="stop-note" class="note" hidden></p>
           <div id="run-error" class="error" hidden></div>
           <pre id="run-output" hidden></pre>
         </div>
@@ -64,7 +73,7 @@
         <div class="panel" id="tab-compare" hidden>
           <div id="compare-cards" class="cards"></div>
           <figure class="chart" id="overlay" hidden>
-            <figcaption>Training loss of the runs you tick below</figcaption>
+            <figcaption id="overlay-title">Training loss of the runs you tick below</figcaption>
             <canvas id="overlay-chart" height="160"></canvas>
             <div id="overlay-legend" class="line-legend"></div>
           </figure>
@@ -129,6 +138,22 @@
           </div>
         </div>
 
+        <div class="panel" id="tab-confusion" hidden>
+          <p id="confusion-note" class="note"></p>
+          <div id="confusion-view" hidden>
+            <canvas id="confusion-canvas" aria-label="Confusion matrix"></canvas>
+            <p id="confusion-hover" class="muted">Point at a cell to see its count.</p>
+          </div>
+          <p class="note">Each row is a true character, each column what the model guessed; every row has the
+            same 100 validation characters. The diagonal (green) counts right guesses. Every other bright
+            cell (red) is a mix-up: the brighter, the more often.</p>
+        </div>
+
+        <div class="panel" id="tab-mistakes" hidden>
+          <p id="mistakes-note" class="note"></p>
+          <div id="mistakes-grid" class="mistakes"></div>
+        </div>
+
         <div class="panel" id="tab-practice" hidden>
           <p id="practice-empty" class="muted">Add <b>Decode practice image</b> to your program and run it.</p>
           <div id="practice-view" hidden>
@@ -141,6 +166,20 @@
           <p class="note">Each pixel is one handwritten character, colored by the class your model predicted.
             Wrong predictions show up as wrong-colored pixels. Look-alike characters (0/O, 1/I, 2/Z, 5/S, 6/G, 8/B)
             have similar colors, so mixing them up barely shows.</p>
+        </div>
+        <div class="panel" id="tab-upload" hidden>
+          <p class="note">Encode any picture in handwritten characters and let your model decode it. Your
+            picture stays in this workspace and is never graded.</p>
+          <label class="upload">Choose a picture: <input type="file" id="upload-file" accept="image/*"></label>
+          <p id="upload-note" class="muted"></p>
+          <div id="upload-view" class="upload-steps" hidden></div>
+          <a id="upload-download" class="button" hidden download="my-decoded-image.png">Download picture | decoded</a>
+        </div>
+
+        <div class="panel" id="tab-card" hidden>
+          <p id="card-note" class="note"></p>
+          <div id="card-view" class="card-doc" hidden></div>
+          <button id="card-download" hidden>Download model card</button>
         </div>
       </div>
     </section>

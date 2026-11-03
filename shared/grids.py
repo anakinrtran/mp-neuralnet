@@ -27,11 +27,13 @@ def classes_to_image(classes: np.ndarray, palette: np.ndarray) -> np.ndarray:
 
 
 def build_grid(groups: np.ndarray, pool_y: np.ndarray, seed: int,
-               exclude: np.ndarray | None = None) -> np.ndarray:
+               exclude: np.ndarray | None = None, allow_reuse: bool = False) -> np.ndarray:
     """Pick a distinct pool index for every pixel, from the pixel's color group.
 
     Returns an (H, W) array of indices into the character pool. `exclude` lists
     pool indices that must not be used (e.g. characters used by another grid).
+    allow_reuse: a group without enough characters reuses some instead of failing
+    (Workspace 5's own images, encoded with the small validation set).
     """
     rng = np.random.default_rng(seed)
     available = np.ones(len(pool_y), dtype=bool)
@@ -45,10 +47,13 @@ def build_grid(groups: np.ndarray, pool_y: np.ndarray, seed: int,
     for g in np.unique(flat):
         need = np.flatnonzero(flat == g)
         have = np.flatnonzero(available & (pool_group == g))
-        if len(have) < len(need):
+        short = len(have) < len(need)
+        if short and not (allow_reuse and len(have)):
             shortages.append(f"{group_name(g)}: need {len(need)}, have {len(have)}")
             continue
-        picks[need] = rng.choice(have, size=len(need), replace=False)
+        # reusing: every character is used about equally often
+        picks[need] = (rng.permutation(np.resize(have, len(need))) if short
+                       else rng.choice(have, size=len(need), replace=False))
     if shortages:
         raise ValueError("Not enough test characters for: " + "; ".join(shortages))
     return picks.reshape(groups.shape)

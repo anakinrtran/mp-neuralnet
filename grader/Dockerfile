@@ -9,6 +9,8 @@ COPY requirements.txt /opt/mpnn/requirements.txt
 RUN pip install --no-cache-dir -r /opt/mpnn/requirements.txt
 
 COPY data/processed/public/practice_*.npz /opt/mpnn/data/
+# Held-out (Workspace 4) and hidden (Workspace 5) grid characters: only ever in this image.
+COPY data/processed/grader/ /opt/mpnn/data/
 COPY shared/ /opt/mpnn/shared/
 COPY grader/grade.py grader/predict.py /opt/mpnn/grader/
 

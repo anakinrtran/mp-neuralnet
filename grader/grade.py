@@ -1,10 +1,16 @@
 """PrairieLearn external grader for every workspace (MPNN_WORKSPACE picks which).
 
-Reads the submitted model.py and model.pt from /grade/student, decodes the practice grid
-without retraining, and writes /grade/results/results.json. The score is 1 if the visible
-practice accuracy meets the workspace's threshold (and the model has any layers the
-workspace requires, e.g. a Conv layer in Workspace 2), else 0. Feedback shows the student's decoded
-image next to the original.
+Reads the submitted model.py and model.pt from /grade/student, decodes the workspace's graded
+grid without retraining, and writes /grade/results/results.json. The score is 1 if the visible
+accuracy meets the workspace's threshold (and the model has any layers the workspace requires,
+e.g. a Conv layer in Workspace 2), else 0.
+
+The graded grid (shared/workspaces.py, graded_grid) is the practice grid in Workspaces 1-3,
+a held-out grid the student never sees in Workspace 4, and the hidden class image in
+Workspace 5. Feedback shows the decoded image next to the original, except for the hidden
+image: there it shows only the accuracy, and results.json also stores the predicted grid
+under "class_vote" (not shown; PrairieLearn keeps it in the submission's feedback, which the
+assessment's submissions CSV downloads include) for scripts/class_vote.py.
 
 Student code runs in a separate process as an unprivileged user (when started as root,
 as in PrairieLearn), after the labels are read and locked away.
@@ -31,7 +37,7 @@ sys.path.insert(0, str(HERE.parent))
 
 from shared.grids import classes_to_image, upscale  # noqa: E402
 from shared.harness import DATA_DIR, WORKSPACE  # noqa: E402
-from shared.palette import VISIBLE_GROUP, load_palette  # noqa: E402
+from shared.palette import CLASSES, VISIBLE_GROUP, load_palette  # noqa: E402
 
 GRADE = Path(os.environ.get("GRADE_DIR", "/grade"))
 STUDENT = GRADE / "student"
@@ -62,8 +68,23 @@ def ws3_hint(layers: list[str]) -> str:
             "Try another optimizer or learning rate, BatchNorm or a scheduler, run it, then Save & Grade again.")
 
 
+def ws4_hint(layers: list[str]) -> str:
+    return ("Look at your training and validation accuracy in the workspace: how far apart do they end up? "
+            "Which ways of keeping a model from memorizing have you combined? Run it, then Save & Grade again.")
+
+
+def ws5_hint(layers: list[str]) -> str:
+    if not any(name.startswith("Conv") for name in layers):
+        return "Which kind of layer did best on images in Workspaces 2-4? Run it, then Save & Grade again."
+    return "Use what worked best in Workspaces 3 and 4, run it, then Save & Grade again."
+
+
 # What to suggest when a submission falls short, per workspace, given the model's layer names.
-FAIL_HINTS = {"ws1": ws1_hint, "ws2": ws2_hint, "ws3": ws3_hint}
+FAIL_HINTS = {"ws1": ws1_hint, "ws2": ws2_hint, "ws3": ws3_hint, "ws4": ws4_hint, "ws5": ws5_hint}
+
+# How feedback names the graded grid.
+GRID_NAMES = {"practice": "the practice image", "heldout": "the held-out test image",
+              "hidden": "the hidden class image"}
 
 # Layers a submission must contain, per workspace: (layer name prefix, test name, message if missing).
 REQUIRED_LAYERS = {
@@ -88,17 +109,20 @@ def png_data_url(rgb: np.ndarray) -> str:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-def load_labels() -> np.ndarray:
-    """Read the labels, check they belong to the baked-in characters, then lock them away."""
-    with np.load(TESTS / "practice_labels.npz") as f:
+def load_labels() -> tuple[np.ndarray, np.ndarray]:
+    """Read the graded grid's labels and palette, check they belong to the baked-in characters,
+    then lock them away."""
+    with np.load(TESTS / WORKSPACE.labels_file) as f:
         labels, want = f["y"], str(f["x_sha256"])
-    chars = np.load(DATA_DIR / WORKSPACE.practice_file)["x"]
+        # a held-out or hidden grid has its own palette; the practice grid's is in shared/palettes
+        palette = f["palette"] if "palette" in f else load_palette(WORKSPACE.id)
+    chars = np.load(DATA_DIR / WORKSPACE.graded_file)["x"]
     if hashlib.sha256(np.ascontiguousarray(chars, dtype=np.uint8).tobytes()).hexdigest() != want:
-        raise RuntimeError("Grader setup error: practice labels don't match the practice characters "
+        raise RuntimeError("Grader setup error: the labels don't match the graded characters "
                            "in the grader image. Rebuild both from data/make_practice.py.")
     if AS_ROOT:
         os.chmod(TESTS, 0o700)
-    return labels
+    return labels, palette
 
 
 def predict(code: Path, weights: Path) -> dict:
@@ -138,27 +162,30 @@ def main():
     info_path = STUDENT / "submission.json"
     info = json.loads(info_path.read_text()) if info_path.exists() else {}
 
-    labels = load_labels()
+    labels, palette = load_labels()
     result = predict(code, weights)
     if "error" in result:
         not_gradable(result["error"])
         return
-    if result.get("workspace") != WORKSPACE.id:  # it must decode the same practice grid
-        raise RuntimeError(f"predict.py decoded {result.get('workspace')}'s practice grid, not {WORKSPACE.id}'s.")
+    if result.get("workspace") != WORKSPACE.id:  # it must decode the same grid
+        raise RuntimeError(f"predict.py decoded {result.get('workspace')}'s grid, not {WORKSPACE.id}'s.")
     pred = np.array(result["pred"])
     if pred.shape != labels.shape:
         not_gradable("The submitted model gave the wrong number of predictions.")
         return
 
+    grid = GRID_NAMES[WORKSPACE.graded_grid]
     wrong = VISIBLE_GROUP[pred] != VISIBLE_GROUP[labels]
     visible = 1 - wrong.mean()
     raw = (pred == labels).mean()
     passed = visible >= WORKSPACE.threshold
     needed = WORKSPACE.threshold
-    summary = (f"{visible:.1%} of the practice image's pixels have the right color "
+    summary = (f"{visible:.1%} of {grid}'s pixels have the right color "
                f"(you need {needed:.1%}). {int(wrong.sum())} of {wrong.size} pixels are wrong.")
+    if WORKSPACE.graded_grid == "heldout":
+        summary += " Your model never saw these characters in the workspace."
     layers = result["layers"]
-    tests = [{"name": f"Practice image: at least {needed:.1%} of pixels right",
+    tests = [{"name": f"{grid[4:].capitalize()}: at least {needed:.1%} of pixels right",
               "points": int(passed), "max_points": 1, "message": summary}]
     missing = []
     for prefix, name, why in REQUIRED_LAYERS.get(WORKSPACE.id, []):
@@ -176,26 +203,27 @@ def main():
 
     model_line = " → ".join(layers)
     val = info.get("val_accuracy")
+    name = grid[4:].capitalize()
     output = (f"Model: {model_line}\n"
               + (f"Validation accuracy in the workspace: {val:.1%}\n" if val is not None else "")
-              + f"Practice image, visible accuracy: {visible:.1%} (look-alikes such as 0/O count as right)\n"
-              + f"Practice image, exact accuracy: {raw:.1%}\n\n"
+              + f"{name}, visible accuracy: {visible:.1%} (look-alikes such as 0/O count as right)\n"
+              + f"{name}, exact accuracy: {raw:.1%}\n\n"
               + "Submitted code:\n" + code.read_text(encoding="utf-8", errors="replace"))
 
-    palette = load_palette(WORKSPACE.id)
-    mask = np.where(wrong[..., None], [220, 40, 40], [245, 245, 245]).astype(np.uint8)
-    write_results({
-        "gradable": True,
-        "score": 1.0 if passed else 0.0,
-        "message": message,
-        "output": output,
-        "images": [
+    results = {"gradable": True, "score": 1.0 if passed else 0.0, "message": message, "output": output,
+               "tests": tests}
+    if WORKSPACE.graded_grid == "hidden":
+        # never show the hidden image; keep the predictions (one string of classes per row) for the class vote
+        results["class_vote"] = {"workspace": WORKSPACE.id,
+                                 "grid": ["".join(CLASSES[c] for c in row) for row in pred]}
+    else:
+        mask = np.where(wrong[..., None], [220, 40, 40], [245, 245, 245]).astype(np.uint8)
+        results["images"] = [
             {"label": "Your decoded image", "url": png_data_url(upscale(classes_to_image(pred, palette), SCALE))},
             {"label": "The original image", "url": png_data_url(upscale(classes_to_image(labels, palette), SCALE))},
             {"label": "Wrong pixels (red)", "url": png_data_url(upscale(mask, SCALE))},
-        ],
-        "tests": tests,
-    })
+        ]
+    write_results(results)
 
 
 if __name__ == "__main__":
