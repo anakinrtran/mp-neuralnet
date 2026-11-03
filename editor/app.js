@@ -537,8 +537,9 @@ async function renderOneStep(start = 0) {
       return;
     }
   }
-  $("onestep-note").textContent = `Run ${runNumber(run.id)}, on a validation character it gets wrong. ` +
-    "Click Next to follow one training step through the network.";
+  $("onestep-note").textContent = "Training is a loop repeated thousands of times: guess, measure the " +
+    "mistake, find which weights caused it, nudge them. Here is one pass of that loop, using your " +
+    `model from run ${runNumber(run.id)} on a validation character it gets wrong. Click Next ▶ to go on.`;
   $("onestep-view").hidden = false;
   drawStages();
 }
@@ -559,6 +560,8 @@ function grayCanvas(pixels, color = null) {
   return c;
 }
 
+const caption = (text) => `<figure><figcaption>${text}</figcaption></figure>`;
+
 function guessBars(top, label) {
   return '<div class="bars">' + top.map(([cls, p]) =>
     `<span class="${cls === label ? "right" : ""}">${cls}</span><div class="bar" style="width:${p * 100}%"></div>` +
@@ -567,37 +570,70 @@ function guessBars(top, label) {
 
 function drawStages() {
   const d = oneStep.data;
-  const pctSmall = (v) => `${(v * 100).toPrecision(2)}%`;
   const max = Math.max(...d.layers.flatMap((l) => [l.change, l.batch_change]));
+  const n = (v) => v.toLocaleString("en-US");
+  const guess = d.before[0][0];
+  const steps = Math.ceil(d.train_size / d.batch);
+  // Words here are limited to what lectures 1–2 teach (LECTURES.md): no softmax, batch,
+  // learning rate or optimizer yet.
   const stages = [
-    `<b>The guess.</b> The model reads this <b>${d.label}</b> and gives each class a probability:` +
-      `<div class="figs"></div>${guessBars(d.before, d.label)}`,
-    `<b>The loss.</b> It gave the right answer, ${d.label}, ${pct(d.true_before)}. The loss is ` +
-      `−log(${d.true_before.toFixed(2)}) = <b>${d.loss.toFixed(2)}</b>. A sure, right guess has loss 0; ` +
-      "the less sure it is of the right answer, the bigger the loss.",
-    "<b>Backpropagation.</b> Working backward from the loss, the model finds how much nudging each " +
-      "weight, and each input pixel, would change the loss. Red pixels are the ones the loss depends on most." +
-      '<div class="figs"></div>',
-    `<b>How much each layer changes.</b> Gradient descent moves every weight a little against its ` +
-      `gradient (learning rate ${d.lr}). Training averages over a batch of 128 characters, so one ` +
-      "odd character moves the weights far less than it would alone:" +
+    "<b>Forward: the guess.</b> The character flows down through the blocks in your Model, " +
+      "top to bottom. The Conv layers look for small patterns like edges and curves, Flatten lines " +
+      "everything up, and the Linear layers combine the patterns into a score for each of the 36 " +
+      "characters. Here are the five it's most sure about:" +
+      `<div class="figs">${caption("the character")}</div>${guessBars(d.before, d.label)}` +
+      `<p>It says <b>${guess}</b>, but this is a <b>${d.label}</b>. Look at the character: can you ` +
+      "see why it might be confused?</p>",
+    "<b>Score the mistake (the loss).</b> To get better, the model needs to know how wrong it was, " +
+      "as a single number: the <i>loss</i>. It's close to 0 when the model is sure of the right " +
+      "answer, and it grows the less sure the model is." +
+      `<p>The model was only ${pct(d.true_before)} sure of ${d.label}, so the loss is ` +
+      `<b>${d.loss.toFixed(2)}</b>. This is the same loss you watched go down in the Training tab, ` +
+      "averaged over many characters there. Training's only goal is to push that number down.</p>",
+    `<b>Backward: who's to blame? (backpropagation)</b> Your model has <b>${n(d.weights)} weights</b> ` +
+      "spread across its layers. Which ones caused this mistake? Backpropagation sends the blame " +
+      "backward through the same blocks, from the last layer up to the first. Every weight gets a " +
+      "<i>gradient</i>, which says which way the weight should move to lower the loss and how much " +
+      "it matters." +
+      "<p>The blame can be traced all the way back to the character's pixels. Red shows where the " +
+      `model was “looking” when it went wrong. Are those the strokes that tell a ${d.label} apart ` +
+      `from a ${guess}?</p>` +
+      `<div class="figs">${caption("the character")}${caption("where the blame lands")}</div>`,
+    "<b>Nudge every weight.</b> Every weight moves a small step the way its gradient points, so " +
+      "next time the guess should be a little better. Every layer gets nudged, from the Conv filters " +
+      "at the top to the last Linear layer. That's how the filters in the <b>Filters</b> tab grew " +
+      "from noise into pattern finders: one tiny nudge at a time." +
+      `<p>The model doesn't learn from one character at a time, though. It looks at a group of ` +
+      `${d.batch} characters together and moves the way that helps the whole group. ` +
+      "Each pair of bars shows how far one of your layers moves: " +
+      "<span class=\"key alt\"></span> for this character alone, " +
+      "<span class=\"key\"></span> for the group that includes it.</p>" +
       '<div class="bars">' + d.layers.map((l) =>
         `<span>${l.name}</span><div class="bar alt" style="width:${(l.change / max) * 100}%"></div>` +
-        `<span>${pctSmall(l.change)} alone</span>` +
+        "<span>alone</span>" +
         `<span></span><div class="bar" style="width:${(l.batch_change / max) * 100}%"></div>` +
-        `<span>${pctSmall(l.batch_change)} in the batch</span>`).join("") + "</div>",
-    `<b>After one step.</b> The right answer went from ${pct(d.true_before)} to <b>${pct(d.true_after)}</b>, ` +
-      `and the loss from ${d.loss.toFixed(2)} to ${d.loss_after.toFixed(2)}. ` +
+        "<span>in the group</span>").join("") + "</div>" +
+      "<p>Alone, one odd character would yank the weights toward itself and could undo what the model " +
+      `learned about other characters. In the group, it's one voice out of ${d.batch}. Do the first ` +
+      "layers move as much as the last ones?</p>",
+    `<b>Did it help?</b> The model went from ${pct(d.true_before)} to <b>${pct(d.true_after)}</b> sure ` +
+      `of ${d.label}. ` +
       (d.true_after < d.true_before
-        ? "It got worse: the step also had to serve the other 127 characters in the batch."
-        : "Training repeats this step thousands of times.") +
-      `<div>${guessBars(d.after, d.label)}</div>`,
+        ? "It got worse! The step was the best move for the group, not for this one character. " +
+          "Mistakes that keep coming up still get fixed over many steps."
+        : "It moved the right way: a step that helps the group usually helps most of its characters too.") +
+      `<div>${guessBars(d.after, d.label)}</div>` +
+      `<p>That's one step. One epoch is ${n(steps)} steps like it, covering all ${n(d.train_size)} ` +
+      "training characters once. Every run you've started was this loop over and over: guess, score " +
+      "the mistake, send the blame backward, nudge every weight. Workspace 3 is about the choices " +
+      "inside this loop, like how big each nudge is and how many characters go in a group.</p>",
   ];
   const list = $("onestep-stages");
   list.innerHTML = stages.slice(0, oneStep.stage).map((s) => `<li>${s}</li>`).join("");
-  const figs = list.querySelectorAll(".figs");
-  figs[0].append(grayCanvas(d.image));
-  figs[1]?.append(grayCanvas(d.image), grayCanvas(d.saliency, "red"));
+  const figs = list.querySelectorAll(".figs figure");
+  figs[0].prepend(grayCanvas(d.image));
+  figs[1]?.prepend(grayCanvas(d.image));
+  figs[2]?.prepend(grayCanvas(d.saliency, "red"));
   $("onestep-next").disabled = oneStep.stage >= stages.length;
 }
 
@@ -689,7 +725,7 @@ async function main() {
   $("run").onclick = startRun;
   $("stop").onclick = () => shownRun && api(`api/runs/${shownRun}/stop`, { method: "POST" });
   $("reset").onclick = () => {
-    if (confirm("Replace your blocks with the starting linear model?")) {
+    if (confirm("Replace your blocks with this workspace's starting blocks?")) {
       workspace.clear();
       loadBlocks(ws.START_STATE);
     }

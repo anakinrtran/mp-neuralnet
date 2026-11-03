@@ -107,6 +107,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 
 .steps { padding-left: 20px; margin: 0; }
 .steps li { margin-bottom: 10px; }
+.steps ul { margin: 4px 0; }
+.steps ul li { margin-bottom: 2px; }
 
 .chart { margin: 0 0 12px; position: relative; }
 .chart figcaption { font-weight: 600; margin-bottom: 4px; display: flex; justify-content: space-between; }
@@ -158,6 +160,10 @@ td.num { font-variant-numeric: tabular-nums; }
 .stages { padding-left: 20px; margin: 0; }
 .stages li { margin-bottom: 14px; }
 .stages .figs { display: flex; gap: 8px; margin-top: 6px; }
+.stages p { margin: 6px 0 0; }
+.stages figure { margin: 0; text-align: center; font-size: 11px; color: var(--ink-muted); }
+.stages .key { display: inline-block; width: 14px; height: 10px; background: var(--chart-line); border-radius: 2px; vertical-align: middle; }
+.stages .key.alt { background: var(--ink-muted); }
 .stages canvas { width: 84px; height: 84px; image-rendering: pixelated; border: 1px solid var(--border); }
 .bars { display: grid; grid-template-columns: max-content 1fr max-content; gap: 3px 8px; align-items: center; font-size: 12px; margin-top: 6px; }
 .bars .bar { height: 10px; background: var(--chart-line); border-radius: 0 4px 4px 0; min-width: 1px; }

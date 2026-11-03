@@ -53,7 +53,7 @@ def ws1_hint(layers: list[str]) -> str:
 
 def ws2_hint(layers: list[str]) -> str:
     if sum(name.startswith("Conv") for name in layers) < 2:
-        return "Try a second Conv → ReLU → MaxPool, or more epochs. Then run it and Save & Grade again."
+        return "Try a second convolution stage, or more epochs. Then run it and Save & Grade again."
     return "Try more filters or more epochs. Then run it and Save & Grade again."
 
 
@@ -64,7 +64,7 @@ FAIL_HINTS = {"ws1": ws1_hint, "ws2": ws2_hint}
 REQUIRED_LAYERS = {
     "ws2": [("Conv", "The model has a Conv layer",
              "Your model has no Conv layer, and this workspace is about convolutional networks. "
-             "Add Conv → ReLU → MaxPool above Flatten, run it, then Save & Grade again.")],
+             "Add a convolution stage, run it, then Save & Grade again.")],
 }
 
 

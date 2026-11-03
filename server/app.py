@@ -197,5 +197,15 @@ def get_submission():
     return {"submission": json.loads(path.read_text()) if path.exists() else None}
 
 
+class EditorFiles(StaticFiles):
+    """The editor's files, revalidated on every load (a cheap 304 when unchanged), so a
+    rebuilt image never runs next to stale JavaScript cached by the browser."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 if EDITOR_DIR.exists():
-    app.mount("/", StaticFiles(directory=EDITOR_DIR, html=True), name="editor")
+    app.mount("/", EditorFiles(directory=EDITOR_DIR, html=True), name="editor")

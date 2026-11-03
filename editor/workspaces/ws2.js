@@ -8,19 +8,27 @@ export const TABS = ["steps", "training", "compare", "filters", "onestep", "prac
 
 export const STEPS = `
   <ol class="steps">
-    <li><b>Start where Workspace 1 ended.</b> Click <b>▶ Run</b> to train the hidden-layer model
-      (2 epochs now: convolutions are slower, so every run here is shorter).</li>
-    <li><b>Add a convolution.</b> From <b>Model</b>, drag <b>Conv</b>, then <b>ReLU</b>, then
-      <b>MaxPool</b> into the Model above Flatten, so it reads
-      <b>Conv 16 → ReLU → MaxPool → Flatten → Linear 128 → ReLU → Linear 36</b>.
-      Run it, then open <b>Compare runs</b>.</li>
+    <li><b>Optional: get a baseline.</b> The Model starts empty this time. Rebuild your network from
+      Workspace 1 (no Conv) and run it.
+      <b>Compare runs</b> keeps your first run, so you'll see exactly what convolutions add.</li>
+    <li><b>Build a convolutional network.</b> Building this one yourself is
+      your first real challenge. Use the <b>Model</b> blocks you met in lecture: Conv, ReLU, MaxPool,
+      Flatten and Linear. Some questions to think through:
+      <ul>
+        <li>Which blocks work on the 28×28 image, and which need one flat list of numbers?</li>
+        <li>Where does each ReLU belong, and why?</li>
+        <li>What must the last layer output?</li>
+      </ul>
+      The editor points out mistakes before you run. Runs are 2 epochs here, since convolutions
+      are slower than Workspace 1's layers.</li>
     <li><b>Watch the filters learn.</b> Open <b>Filters</b> and drag the slider from "before training"
       to the end. Which filters end up finding edges? Which find the character's strokes?</li>
     <li><b>Take one training step apart.</b> Open <b>One step</b> and click <b>Next</b> through a
       single step on a character your model gets wrong: its guess, the loss, backpropagation,
       the weight changes, and the guess afterward.</li>
-    <li><b>Go deeper.</b> Add a second <b>Conv 32 → ReLU → MaxPool</b> right after the first one.
-      Run again and open <b>Practice image</b>.</li>
+    <li><b>Go further.</b> Can you beat your first CNN? Try another convolution stage, more
+      filters, or a different hidden layer. <b>Compare runs</b> shows your first and latest runs
+      side by side, and <b>Practice image</b> shows what your model reads.</li>
     <li><b>Grade.</b> <span id="submit-note"></span></li>
   </ol>`;
 
@@ -36,7 +44,7 @@ export const MAX_INSTANCES = {
   load_data: 1, model: 1, train: 1, evaluate: 1, decode_practice: 1,
 };
 
-// Workspace 1's final model, with Decode practice image already attached.
+// The pipeline with an empty Model: building the network is the student's first challenge.
 export const START_STATE = {
   blocks: {
     languageVersion: 0,
@@ -44,16 +52,6 @@ export const START_STATE = {
       type: "load_data", x: 40, y: 40,
       next: { block: {
         type: "model",
-        inputs: { LAYERS: { block: {
-          type: "flatten",
-          next: { block: {
-            type: "linear", fields: { OUTPUTS: 128 },
-            next: { block: {
-              type: "relu",
-              next: { block: { type: "linear", fields: { OUTPUTS: 36 } } },
-            } },
-          } },
-        } } },
         next: { block: {
           type: "train", fields: { EPOCHS: 2 },
           next: { block: {
@@ -74,7 +72,7 @@ const IMAGE_LAYERS = ["conv", "maxpool"];
  */
 export function checkModel(layers, cfg) {
   if (layers.length === 0) {
-    return { problems: ["The Model is empty. Put Conv, Flatten and Linear blocks inside it."], hints: [] };
+    return { problems: ["The Model is empty. Build your network inside it from the Model blocks."], hints: [] };
   }
   const problems = [];
   const hints = [];
@@ -100,7 +98,7 @@ export function checkModel(layers, cfg) {
   problems.push(...outputLayerProblems(layers, cfg), ...hiddenSizeProblems(layers, cfg));
 
   if (!types.includes("conv")) {
-    hints.push("This model has no Conv block yet. Add Conv → ReLU → MaxPool above Flatten.");
+    hints.push("This model has no Conv block yet, and this workspace is about convolutional networks.");
   } else if (types.some((t, i) => t === "conv" && types[i + 1] !== "relu")) {
     hints.push("Put a ReLU right after each Conv block. Without it, stacked filters can only " +
       "find simple patterns.");

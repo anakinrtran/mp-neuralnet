@@ -36,6 +36,7 @@ def test_one_step_takes_apart_a_mistake(run_dir):
     assert VISIBLE_GROUP[CLASSES.index(guess)] != VISIBLE_GROUP[CLASSES.index(r["label"])]
     assert [layer["name"] for layer in r["layers"]] == ["Linear(36)"]
     assert len(r["image"]) == len(r["saliency"]) == 28
+    assert r["weights"] == 784 * 36 + 36
     assert (run_dir / "model.pt").read_bytes() == weights  # the run's model is unchanged
 
 

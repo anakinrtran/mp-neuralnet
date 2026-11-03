@@ -85,4 +85,7 @@ def one_step(run_dir: Path, start: int = 0) -> dict:
         "true_after": round(float(after[true]), 4),
         "loss_after": round(float(loss_fn(after_logits, y)), 4),
         "lr": STEP_LR,
+        "weights": sum(p.numel() for p in model.parameters()),
+        "train_size": len(np.load(harness.DATA_DIR / "train.npz")["y"]),
+        "batch": BATCH,
     }
