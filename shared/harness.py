@@ -24,6 +24,7 @@ weights instead of training.
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -45,9 +46,10 @@ from shared.palette import CLASSES  # noqa: E402
 DATA_DIR = Path(os.environ.get("MPNN_DATA", REPO / "data" / "processed" / "public"))
 WORKSPACE = workspaces.current()
 TRAIN_PER_CLASS = int(os.environ.get("MPNN_TRAIN_PER_CLASS", config.TRAIN_PER_CLASS))
-EVAL_BATCH = 1024
+EVAL_BATCH = 256  # bigger chunks need hundreds of MB with wide Conv layers (1 GB workspaces)
 STEP_EVENTS_PER_EPOCH = 40
 VAL_EVENTS_PER_EPOCH = 4
+ZOOM_STEPS = 30  # steps recorded one by one at the start
 TIMELAPSE_SNAPSHOTS = 10  # of the first Conv layer, saved to timelapse.npz
 TIMELAPSE_FILTERS = 16
 
@@ -80,10 +82,16 @@ def load_data():
     return train_data, val_data
 
 
-def train(model, train_data, val_data, epochs=WORKSPACE.default_epochs):
-    """Train with fixed settings (Adam, fixed learning rate and batch size)."""
+def train(model, train_data, val_data, epochs=WORKSPACE.default_epochs, batch_size=config.BATCH_SIZE,
+          optimizer=None, loss_fn=None, scheduler=None):
+    """Train the model. Workspaces 1-2 use the defaults (Adam, cross-entropy, batch 128); from
+    Workspace 3 the blocks pass their own optimizer, loss and scheduler. The scheduler is
+    stepped after every batch. An MSE loss compares the softmax probabilities with the
+    one-hot right answer, the usual way to use it for classification."""
     if not isinstance(epochs, int) or not 1 <= epochs <= WORKSPACE.max_epochs:
         raise StudentError(f"Epochs must be a whole number from 1 to {WORKSPACE.max_epochs}.")
+    if batch_size not in config.BATCH_SIZES:
+        raise StudentError(f"Batch size must be one of {', '.join(map(str, config.BATCH_SIZES))}.")
     check_model(model)
     _state["model"] = model
 
@@ -93,31 +101,55 @@ def train(model, train_data, val_data, epochs=WORKSPACE.default_epochs):
         return
 
     emit("model", layers=describe_layers(model))
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
-    loss_fn = nn.CrossEntropyLoss()
-    loader = DataLoader(train_data, batch_size=config.BATCH_SIZE, shuffle=True)
+    if optimizer is None:
+        optimizer = torch.optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
+    if loss_fn is None:
+        loss_fn = nn.CrossEntropyLoss()
+    loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    weighted = [m for m in model.modules() if isinstance(m, (nn.Linear, nn.Conv2d))]
     steps_per_epoch = len(loader)
     step_every = max(1, steps_per_epoch // STEP_EVENTS_PER_EPOCH)
     val_steps = {round(k * steps_per_epoch / VAL_EVENTS_PER_EPOCH) for k in range(1, VAL_EVENTS_PER_EPOCH + 1)}
 
+    emit("settings", text=_settings_text(optimizer, loss_fn, scheduler, batch_size))
     emit("train_start", epochs=epochs, steps_per_epoch=steps_per_epoch,
-         parameters=sum(p.numel() for p in model.parameters()))
+         parameters=sum(p.numel() for p in model.parameters()),
+         weighted=[n for n in describe_layers(model) if n.startswith(("Conv", "Linear"))])
     snapshot = _timelapse_recorder(model, val_data, epochs * steps_per_epoch)
     start = time.perf_counter()
     for epoch in range(epochs):
         running, count = 0.0, 0
         for i, (x, y) in enumerate(loader, start=1):
             model.train()
-            loss = loss_fn(model(x), y)
+            out = model(_as_float(x))
+            if isinstance(loss_fn, nn.MSELoss):
+                loss = loss_fn(out.softmax(1), nn.functional.one_hot(y, config.NUM_CLASSES).float())
+            else:
+                loss = loss_fn(out, y)
+            if not math.isfinite(loss.item()):
+                raise StudentError(
+                    f"Training stopped: the loss exploded (it grew too large to compute) at step {i} of "
+                    f"epoch {epoch + 1}. Look at the loss curve and the Gradients tab: what happened "
+                    "right before?")
+            # also every one of the first steps, for the zoomed Gradients chart: a learning rate
+            # that's too high does its damage there
+            measure = i % step_every == 0 or (epoch == 0 and i <= ZOOM_STEPS)
+            before = [m.weight.detach().clone() for m in weighted] if measure else None
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            if scheduler is not None:
+                scheduler.step()
             running += loss.item()
             count += 1
             progress = epoch + i / steps_per_epoch
             snapshot(epoch * steps_per_epoch + i, progress)
-            if i % step_every == 0:
-                emit("step", progress=round(progress, 4), loss=round(running / count, 4))
+            if measure:
+                # how far each layer's weights moved this step, relative to their size
+                updates = [float((m.weight.detach() - b).norm() / b.norm().clamp_min(1e-12))
+                           for m, b in zip(weighted, before)]
+                emit("step", progress=round(progress, 4), loss=round(running / count, 4),
+                     updates=[round(u, 6) if math.isfinite(u) else None for u in updates])
                 running, count = 0.0, 0
             if i in val_steps:
                 emit("val", progress=round(progress, 4), accuracy=round(accuracy(model, val_data), 4))
@@ -128,13 +160,28 @@ def train(model, train_data, val_data, epochs=WORKSPACE.default_epochs):
     emit("train_done", seconds=round(time.perf_counter() - start, 2))
 
 
+def _settings_text(optimizer, loss_fn, scheduler, batch_size) -> str:
+    """e.g. "SGD + momentum, lr 0.1 · cosine · cross-entropy · batch 128" for the run history."""
+    group = optimizer.param_groups[0]
+    name = type(optimizer).__name__
+    if name == "SGD" and group.get("momentum"):
+        name = "SGD + momentum"
+    parts = [f"{name}, lr {group.get('initial_lr', group['lr']):g}"]
+    if scheduler is not None:
+        parts.append({"StepLR": "step decay", "CosineAnnealingLR": "cosine"}.get(
+            type(scheduler).__name__, type(scheduler).__name__))
+    parts.append("MSE" if isinstance(loss_fn, nn.MSELoss) else "cross-entropy")
+    parts.append(f"batch {batch_size}")
+    return " · ".join(parts)
+
+
 def _timelapse_recorder(model, val_data, total_steps):
     """Records the first Conv layer's filters, and their outputs on one sample character,
     at TIMELAPSE_SNAPSHOTS steps (closer together early on, when filters change fastest).
     Call it every step; it does nothing for models without a Conv layer."""
     conv = next((m for m in model.modules() if isinstance(m, nn.Conv2d)), None)
     images, labels = val_data.tensors
-    sample = images[labels.tolist().index(CLASSES.index("A"))][None]  # (1, 1, 28, 28)
+    sample = _as_float(images[labels.tolist().index(CLASSES.index("A"))][None])  # (1, 1, 28, 28)
     steps = {round(total_steps * (k / (TIMELAPSE_SNAPSHOTS - 1)) ** 2) for k in range(TIMELAPSE_SNAPSHOTS)}
     snaps = []
 
@@ -178,7 +225,8 @@ def decode_practice(model):
 # ---------- helpers ----------
 
 def _to_dataset(x: np.ndarray, y: np.ndarray) -> TensorDataset:
-    images = torch.from_numpy(x).float().div_(255).unsqueeze(1)
+    # images stay bytes (a quarter of the memory of floats) and become floats one batch at a time
+    images = torch.from_numpy(x).unsqueeze(1)
     return TensorDataset(images, torch.from_numpy(y).long())
 
 
@@ -187,10 +235,13 @@ def check_model(model):
     if not isinstance(model, nn.Module):
         raise StudentError("The model must be built from layer blocks.")
     try:
+        model.eval()  # BatchNorm can't train on a single image; eval also leaves its statistics alone
         with torch.no_grad():
             out = model(torch.zeros(1, 1, 28, 28))
     except Exception as e:
         raise StudentError(f"The model could not process an image: {e}") from e
+    finally:
+        model.train()
     if not any(True for _ in model.parameters()):
         raise StudentError("The model has no Linear layer, so it has nothing to learn. Add a Linear block.")
     if out.dim() != 2 or out.shape[1] != config.NUM_CLASSES:
@@ -211,14 +262,21 @@ def describe_layers(model) -> list[str]:
             return f"Conv({m.out_channels})"
         if isinstance(m, nn.MaxPool2d):
             return "MaxPool"
+        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d)):
+            return "BatchNorm"
         return type(m).__name__
     return [name(m) for m in layers]
 
 
 @torch.no_grad()
+def _as_float(images: torch.Tensor) -> torch.Tensor:
+    """Byte images (0-255) as floats in 0-1; float images unchanged."""
+    return images.float().div_(255) if images.dtype == torch.uint8 else images
+
+
 def predict(model, images: torch.Tensor) -> np.ndarray:
     model.eval()
-    return torch.cat([model(images[i:i + EVAL_BATCH]).argmax(1)
+    return torch.cat([model(_as_float(images[i:i + EVAL_BATCH])).argmax(1)
                       for i in range(0, len(images), EVAL_BATCH)]).numpy()
 
 

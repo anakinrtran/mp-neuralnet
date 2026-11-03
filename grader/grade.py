@@ -57,8 +57,13 @@ def ws2_hint(layers: list[str]) -> str:
     return "Try more filters or more epochs. Then run it and Save & Grade again."
 
 
+def ws3_hint(layers: list[str]) -> str:
+    return ("Look at your loss curve in the workspace: is it flat, bumpy, or still dropping at the end? "
+            "Try another optimizer or learning rate, BatchNorm or a scheduler, run it, then Save & Grade again.")
+
+
 # What to suggest when a submission falls short, per workspace, given the model's layer names.
-FAIL_HINTS = {"ws1": ws1_hint, "ws2": ws2_hint}
+FAIL_HINTS = {"ws1": ws1_hint, "ws2": ws2_hint, "ws3": ws3_hint}
 
 # Layers a submission must contain, per workspace: (layer name prefix, test name, message if missing).
 REQUIRED_LAYERS = {

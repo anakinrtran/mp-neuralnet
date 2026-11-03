@@ -40,6 +40,7 @@
           <button role="tab" data-tab="compare">Compare runs</button>
           <button role="tab" data-tab="weights">Weights</button>
           <button role="tab" data-tab="filters">Filters</button>
+          <button role="tab" data-tab="gradients">Gradients</button>
           <button role="tab" data-tab="onestep">One step</button>
           <button role="tab" data-tab="practice">Practice image</button>
         </nav>
@@ -62,8 +63,13 @@
 
         <div class="panel" id="tab-compare" hidden>
           <div id="compare-cards" class="cards"></div>
+          <figure class="chart" id="overlay" hidden>
+            <figcaption>Training loss of the runs you tick below</figcaption>
+            <canvas id="overlay-chart" height="160"></canvas>
+            <div id="overlay-legend" class="line-legend"></div>
+          </figure>
           <table id="history">
-            <thead><tr><th>#</th><th>Layers</th><th>Epochs</th><th>Val. accuracy</th><th>Status</th></tr></thead>
+            <thead><tr><th>#</th><th>Layers</th><th class="settings-col">Training</th><th>Epochs</th><th>Val. accuracy</th><th>Status</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -96,14 +102,30 @@
             <span class="swatch pos"></span> positive</p>
         </div>
 
+        <div class="panel" id="tab-gradients" hidden>
+          <p id="gradients-note" class="note"></p>
+          <figure class="chart" id="gradients" hidden>
+            <figcaption>How much each layer's weights change in one step (log scale)</figcaption>
+            <canvas id="gradients-chart" height="200"></canvas>
+            <div id="gradients-legend" class="line-legend"></div>
+          </figure>
+          <figure class="chart" id="gradients-zoom" hidden>
+            <figcaption>Zoomed in: the first 50 steps, one point per step at the start</figcaption>
+            <canvas id="gradients-zoom-chart" height="200"></canvas>
+          </figure>
+          <p class="note">Each line is one Conv or Linear layer. 1 means a step changed the layer's weights by as
+            much as their whole size; 0.001 means by a thousandth of it. Points at the bottom mean the layer
+            didn't change at all.</p>
+        </div>
+
         <div class="panel" id="tab-onestep" hidden>
           <p id="onestep-note" class="note"></p>
           <div id="onestep-view" hidden>
+            <ol id="onestep-stages" class="stages"></ol>
             <div class="onestep-controls">
               <button id="onestep-next" class="primary">Next ▶</button>
               <button id="onestep-another" class="quiet">Another mistake</button>
             </div>
-            <ol id="onestep-stages" class="stages"></ol>
           </div>
         </div>
 
