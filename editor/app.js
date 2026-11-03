@@ -66,7 +66,7 @@ function highlight(code) {
 }
 
 function updateCode() {
-  $("code").innerHTML = highlight(generateCode(workspace));
+  $("code").innerHTML = highlight(generateCode(workspace, cfg));
   check = checkProgram(workspace, cfg, ws.checkModel);
   const lines = check.problems.length
     ? check.problems.map((p) => `<p class="problem">⚠ ${p}</p>`)
@@ -96,6 +96,8 @@ function showTab(name) {
   if (name === "weights") renderWeights();
   if (name === "filters") renderFilters();
   if (name === "onestep") renderOneStep();
+  if (name === "gradients") renderGradients();
+  if (name === "compare") renderOverlay();
 }
 
 function markFresh(name) {
@@ -111,7 +113,7 @@ async function startRun() {
     const run = await api("api/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: generateCode(workspace) }),
+      body: JSON.stringify({ code: generateCode(workspace, cfg) }),
     });
     setRunning(true);
     showTab("training");
@@ -130,6 +132,7 @@ function setRunning(on) {
 function resetRunView() {
   charts.loss.points = [];
   charts.acc.points = [];
+  gradients = { names: [], xMax: 1, points: [] };
   $("loss-value").textContent = "";
   $("acc-value").textContent = "";
   $("run-error").hidden = true;
@@ -158,10 +161,13 @@ function handleEvent(e, live) {
   switch (e.event) {
     case "train_start":
       charts.loss.xMax = charts.acc.xMax = e.epochs;
+      gradients = { names: e.weighted || [], xMax: e.epochs, perEpoch: e.steps_per_epoch, points: [] };
       $("train-progress").textContent = `Training: epoch 1 of ${e.epochs}…`;
       break;
     case "step":
       charts.loss.points.push([e.progress, e.loss]);
+      if (e.updates) gradients.points.push([e.progress, e.updates]);
+      if (!$("tab-gradients").hidden) renderGradients();
       $("loss-value").textContent = e.loss.toFixed(3);
       scheduleDraw();
       break;
@@ -203,11 +209,13 @@ function finishRun(status, live) {
   $("train-progress").textContent = live ? `${words[status]} after ${secs}s.` : `${words[status]} (latest run).`;
   if (live) {
     setRunning(false);
+    if (status !== "stopped") overlayRuns.add(shownRun);  // its curve joins the Compare runs overlay
     $("status").textContent = words[status];
     if (status === "done") {
       markFresh("compare");
       markFresh("weights");
       markFresh("filters");
+      markFresh("gradients");
     }
   }
   refreshHistory().then(refreshSubmission);
@@ -367,7 +375,7 @@ async function refreshHistory() {
     $("compare-cards").innerHTML = '<p class="muted">Finished runs show up here.</p>';
   } else if (finished.length === 1) {
     $("compare-cards").innerHTML = card("First run", finished[0]) +
-      '<p class="muted">Add a hidden layer and run again to compare.</p>';
+      '<p class="muted">Change something and run again to compare.</p>';
   } else {
     const first = finished[0];
     const latest = finished[finished.length - 1];
@@ -375,17 +383,126 @@ async function refreshHistory() {
     const delta = `<div class="delta">${d >= 0 ? "▲" : "▼"} ${Math.abs(d).toFixed(1)} points vs. first run</div>`;
     $("compare-cards").innerHTML = card("First run", first) + card("Latest run", latest, delta);
   }
+  const curves = !!ws.COMPARE_CURVES;
+  for (const th of document.querySelectorAll("#history .settings-col")) th.hidden = !curves;
   $("history").querySelector("tbody").innerHTML = history.map((r, i) => `
     <tr data-run="${r.id}">
-      <td>${i + 1}</td>
+      <td>${curves ? `<label><input type="checkbox" class="pick" data-run="${r.id}" ` +
+        `${overlayRuns.has(r.id) ? "checked" : ""} ${r.status === "running" ? "disabled" : ""}> ${i + 1}</label>` : i + 1}</td>
       <td>${layersText(r.layers)}</td>
+      ${curves ? `<td>${r.settings ?? "—"}</td>` : ""}
       <td class="num">${r.epochs ?? "—"}</td>
       <td class="num">${r.val_accuracy != null ? pct(r.val_accuracy) : "—"}</td>
       <td>${r.status}${submission?.run_id === r.id ? ' <span class="badge">graded</span>' : ""}</td>
     </tr>`).join("");
   updateButtons();
+  if (!$("tab-compare").hidden) renderOverlay();
   if (!$("tab-weights").hidden) renderWeights();
   if (!$("tab-filters").hidden) renderFilters();
+}
+
+// ---------- line charts with several lines (overlay, gradients) ----------
+
+const LINE_COLORS = ["#2f6fd6", "#d65f2f", "#2f9a5a", "#9b4fc4", "#b5901f", "#c43f7a", "#3a9cb5", "#6b6b6b"];
+
+/** Draws lines [{ name, points: [[x, y], ...] }] on a canvas; y is log-scaled when `log`. */
+function drawLines(canvas, lines, { xMax, log = false, height = 160, xLabel = "epochs" }) {
+  const css = getComputedStyle(document.documentElement);
+  const color = (name) => css.getPropertyValue(name).trim();
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth;
+  const h = height;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.height = `${h}px`;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  const pad = { l: 46, r: 10, t: 8, b: 36 };
+  const ys = lines.flatMap((l) => l.points.map((p) => p[1])).filter((v) => v != null && Number.isFinite(v));
+  // log: decades from 1e-6 (shown as "no change") up to the largest value
+  const lo = log ? -6 : 0;
+  const hi = log ? Math.max(0, Math.ceil(Math.log10(Math.max(...ys, 1e-6)))) : Math.max(0.5, ...ys) * 1.1;
+  const t = (v) => (log ? Math.log10(Math.max(v, 1e-6)) : v);
+  const x = (v) => pad.l + (v / xMax) * (w - pad.l - pad.r);
+  const y = (v) => pad.t + (1 - (t(v) - lo) / (hi - lo)) * (h - pad.t - pad.b);
+
+  ctx.font = "11px system-ui, sans-serif";
+  ctx.fillStyle = color("--ink-muted");
+  ctx.strokeStyle = color("--chart-grid");
+  ctx.lineWidth = 1;
+  const ticks = log ? Array.from({ length: hi - lo + 1 }, (_, i) => 10 ** (lo + i)).filter((_, i, a) => a.length < 8 || i % 2 === 0)
+    : [0, 1, 2, 3, 4].map((i) => (hi * i) / 4);
+  for (const v of ticks) {
+    ctx.beginPath(); ctx.moveTo(pad.l, y(v)); ctx.lineTo(w - pad.r, y(v)); ctx.stroke();
+    ctx.textAlign = "right";
+    ctx.fillText(log ? (v <= 1e-6 ? "none" : String(v)) : v.toFixed(2), pad.l - 6, y(v) + 4);
+  }
+  ctx.textAlign = "center";
+  const every = Math.ceil(xMax / 10);
+  for (let e = 0; e <= xMax; e += every) ctx.fillText(e, x(e), h - pad.b + 14);
+  ctx.fillText(xLabel, (pad.l + w - pad.r) / 2, h - 4);
+
+  ctx.lineWidth = 2;
+  ctx.lineJoin = "round";
+  lines.forEach((line, k) => {
+    ctx.strokeStyle = LINE_COLORS[k % LINE_COLORS.length];
+    ctx.beginPath();
+    let started = false;
+    for (const [px, py] of line.points) {
+      if (py == null || !Number.isFinite(py)) { started = false; continue; }
+      if (started) ctx.lineTo(x(px), y(py)); else ctx.moveTo(x(px), y(py));
+      started = true;
+    }
+    ctx.stroke();
+  });
+}
+
+function lineLegend(el, names) {
+  el.innerHTML = names.map((n, k) =>
+    `<span style="--line-color:${LINE_COLORS[k % LINE_COLORS.length]}">${n}</span>`).join("");
+}
+
+// ---------- gradients (update size per layer) ----------
+
+let gradients = { names: [], xMax: 1, points: [] };
+
+function renderGradients() {
+  const note = $("gradients-note");
+  if (!gradients.points.length) {
+    $("gradients").hidden = true;
+    note.textContent = "Run your model, then come back to see how much each layer changes during training.";
+    return;
+  }
+  note.textContent = shownRun ? `Run ${runNumber(shownRun) || history.length + 1}.` : "";
+  $("gradients").hidden = false;
+  const lines = gradients.names.map((name, k) => ({ name, points: gradients.points.map(([p, u]) => [p, u[k]]) }));
+  drawLines($("gradients-chart"), lines, { xMax: gradients.xMax, log: true, height: 200 });
+  lineLegend($("gradients-legend"), gradients.names);
+  // the same lines in steps, cut to the start of training
+  const zoom = 50;
+  const early = lines.map((l) => ({ ...l, points: l.points.map(([p, u]) => [p * gradients.perEpoch, u])
+    .filter(([step]) => step <= zoom) }));
+  $("gradients-zoom").hidden = !gradients.perEpoch;
+  if (gradients.perEpoch) drawLines($("gradients-zoom-chart"), early, { xMax: zoom, log: true, height: 200, xLabel: "steps" });
+}
+
+// ---------- loss-curve overlay (Compare runs) ----------
+
+const overlayRuns = new Set();
+const curveCache = new Map();
+
+async function renderOverlay() {
+  if (!ws.COMPARE_CURVES) return;
+  const picked = history.filter((r) => overlayRuns.has(r.id) && r.status !== "running");
+  $("overlay").hidden = picked.length === 0;
+  if (!picked.length) return;
+  for (const r of picked) {
+    if (!curveCache.has(r.id)) curveCache.set(r.id, await api(`api/runs/${r.id}/curve`).catch(() => []));
+  }
+  const lines = picked.map((r) => ({ name: `Run ${runNumber(r.id)}`, points: curveCache.get(r.id) }));
+  const xMax = Math.max(1, ...picked.map((r) => r.epochs || 1));
+  drawLines($("overlay-chart"), lines, { xMax });
+  lineLegend($("overlay-legend"), picked.map((r) => `Run ${runNumber(r.id)}: ${r.settings ?? layersText(r.layers)}`));
 }
 
 // ---------- weights ----------
@@ -570,7 +687,9 @@ function guessBars(top, label) {
 
 function drawStages() {
   const d = oneStep.data;
-  const max = Math.max(...d.layers.flatMap((l) => [l.change, l.batch_change]));
+  const max = Math.max(...d.layers.flatMap((l) => [l.change, l.batch_change])) || 1;
+  // a dead network (e.g. after a far too high learning rate): no blame reaches any weight
+  const frozen = d.layers.every((l) => l.change === 0 && l.batch_change === 0);
   const n = (v) => v.toLocaleString("en-US");
   const guess = d.before[0][0];
   const steps = Math.ceil(d.train_size / d.batch);
@@ -601,8 +720,11 @@ function drawStages() {
       `<div class="figs">${caption("the character")}${caption("where the blame lands")}</div>`,
     "<b>Nudge every weight.</b> Every weight moves a small step the way its gradient points, so " +
       "next time the guess should be a little better. Every layer gets nudged, from the Conv filters " +
-      "at the top to the last Linear layer. That's how the filters in the <b>Filters</b> tab grew " +
-      "from noise into pattern finders: one tiny nudge at a time." +
+      "at the top to the last Linear layer. " +
+      (ws.TABS.includes("filters")
+        ? "That's how the filters in the <b>Filters</b> tab grew from noise into pattern finders: "
+        : "That's how Conv filters grow from noise into pattern finders: ") +
+      "one tiny nudge at a time." +
       `<p>The model doesn't learn from one character at a time, though. It looks at a group of ` +
       `${d.batch} characters together and moves the way that helps the whole group. ` +
       "Each pair of bars shows how far one of your layers moves: " +
@@ -613,19 +735,28 @@ function drawStages() {
         "<span>alone</span>" +
         `<span></span><div class="bar" style="width:${(l.batch_change / max) * 100}%"></div>` +
         "<span>in the group</span>").join("") + "</div>" +
-      "<p>Alone, one odd character would yank the weights toward itself and could undo what the model " +
-      `learned about other characters. In the group, it's one voice out of ${d.batch}. Do the first ` +
-      "layers move as much as the last ones?</p>",
+      (frozen
+        ? "<p><b>Here, no layer moves at all.</b> Every gradient is zero: the blame never reaches a single " +
+          "weight, so there's nothing to nudge. What could leave a network in that state?</p>"
+        : "<p>Alone, one odd character would yank the weights toward itself and could undo what the model " +
+          `learned about other characters. In the group, it's one voice out of ${d.batch}. Do the first ` +
+          "layers move as much as the last ones?</p>"),
     `<b>Did it help?</b> The model went from ${pct(d.true_before)} to <b>${pct(d.true_after)}</b> sure ` +
       `of ${d.label}. ` +
-      (d.true_after < d.true_before
+      (frozen
+        ? "Nothing changed, because no weight moved. A network stuck like this can't learn, no matter " +
+          "how many more steps it takes."
+        : pct(d.true_after) === pct(d.true_before)
+        ? "It barely moved: one step is small."
+        : d.true_after < d.true_before
         ? "It got worse! The step was the best move for the group, not for this one character. " +
           "Mistakes that keep coming up still get fixed over many steps."
         : "It moved the right way: a step that helps the group usually helps most of its characters too.") +
       `<div>${guessBars(d.after, d.label)}</div>` +
       `<p>That's one step. One epoch is ${n(steps)} steps like it, covering all ${n(d.train_size)} ` +
       "training characters once. Every run you've started was this loop over and over: guess, score " +
-      "the mistake, send the blame backward, nudge every weight. Workspace 3 is about the choices " +
+      "the mistake, send the blame backward, nudge every weight. " +
+      (cfg.workspace === "ws2" ? "Workspace 3 is about" : "This workspace is about") + " the choices " +
       "inside this loop, like how big each nudge is and how many characters go in a group.</p>",
   ];
   const list = $("onestep-stages");
@@ -646,8 +777,9 @@ function showPractice(grid) {
   $("practice-empty").hidden = true;
   $("practice-view").hidden = false;
   const canvas = $("practice-canvas");
+  canvas.width = canvas.height = grid.length;  // 32 or 64 characters a side
   const ctx = canvas.getContext("2d");
-  const img = ctx.createImageData(32, 32);
+  const img = ctx.createImageData(grid.length, grid.length);
   const rgb = cfg.colors.map(hexToRgb);
   grid.flat().forEach((c, i) => {
     img.data.set([...rgb[c], 255], i * 4);
@@ -658,8 +790,9 @@ function showPractice(grid) {
 function hoverPractice(ev) {
   if (!practiceGrid) return;
   const canvas = $("practice-canvas");
-  const col = Math.min(31, Math.floor((ev.offsetX / canvas.clientWidth) * 32));
-  const row = Math.min(31, Math.floor((ev.offsetY / canvas.clientHeight) * 32));
+  const n = practiceGrid.length;
+  const col = Math.min(n - 1, Math.floor((ev.offsetX / canvas.clientWidth) * n));
+  const row = Math.min(n - 1, Math.floor((ev.offsetY / canvas.clientHeight) * n));
   if (!charsImage) {
     charsImage = new Image();
     charsImage.src = "api/practice/characters.png";
@@ -724,6 +857,12 @@ async function main() {
   }
   $("run").onclick = startRun;
   $("stop").onclick = () => shownRun && api(`api/runs/${shownRun}/stop`, { method: "POST" });
+  $("history").addEventListener("change", (ev) => {
+    if (!ev.target.matches("input.pick")) return;
+    if (ev.target.checked) overlayRuns.add(ev.target.dataset.run);
+    else overlayRuns.delete(ev.target.dataset.run);
+    renderOverlay();
+  });
   $("reset").onclick = () => {
     if (confirm("Replace your blocks with this workspace's starting blocks?")) {
       workspace.clear();
@@ -732,7 +871,12 @@ async function main() {
   };
   $("practice-canvas").addEventListener("mousemove", hoverPractice);
   $("filters-slider").addEventListener("input", drawSnapshot);
-  $("onestep-next").onclick = () => { oneStep.stage++; drawStages(); };
+  $("onestep-next").onclick = () => {
+    oneStep.stage++;
+    drawStages();
+    // the buttons sit under the stages: bring the new stage's start into view
+    $("onestep-stages").lastElementChild.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
   $("onestep-another").onclick = () => renderOneStep(oneStep.data.index + 1);
 
   // Pick up where we left off: reattach to a run in progress, or show the latest one.

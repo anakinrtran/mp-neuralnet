@@ -40,12 +40,24 @@ class Run:
             "started": self.started,
             "status": self.status,
             "layers": found.get("model", {}).get("layers"),
+            "settings": found.get("settings", {}).get("text"),
             "epochs": found.get("train_start", {}).get("epochs"),
             "val_accuracy": val["accuracy"] if val else None,
             "seconds": found.get("done", {}).get("seconds"),
             "error": found.get("error", {}).get("message"),
             "decoded": "decoded" in found,
         }
+
+
+def crash_message(code: int, run_dir: Path) -> str:
+    """Plain words for a run that died without explaining itself."""
+    if code in (-9, 137):  # SIGKILL: in a workspace, the 1 GB memory limit (Stop is handled before this)
+        batch = "batch_size=" in (run_dir / "model.py").read_text(encoding="utf-8")
+        return ("The run ran out of memory and was stopped (the workspace has 1 GB). Conv layers with many "
+                "filters before the first MaxPool use the most memory" +
+                (", and so do bigger batch sizes. Try a smaller batch size or fewer filters." if batch
+                 else ". Try fewer filters, or put a MaxPool earlier."))
+    return f"The run crashed (exit code {code})."
 
 
 class RunManager:
@@ -98,7 +110,7 @@ class RunManager:
         if run.status == "running":
             run.status = "done" if code == 0 else "error"
             if code != 0 and not any(e["event"] == "error" for e in run.events):
-                run.events.append({"event": "error", "message": f"The run crashed (exit code {code})."})
+                run.events.append({"event": "error", "message": crash_message(code, run.dir)})
         if run.status == "done" and (run.dir / "model.pt").exists():
             self._save_for_grading(run)
         run.events.append({"event": "end", "status": run.status})

@@ -86,6 +86,10 @@ def get_config():
         "hidden": {"default": config.HIDDEN_DEFAULT, "min": config.HIDDEN_MIN, "max": config.HIDDEN_MAX},
         "conv": {"default": config.CONV_DEFAULT, "min": config.CONV_MIN, "max": config.CONV_MAX},
         "epochs": {"default": WORKSPACE.default_epochs, "max": WORKSPACE.max_epochs},
+        "batch_sizes": config.BATCH_SIZES,
+        "batch_default": config.BATCH_SIZE,
+        # shortcut: ignores MPNN_TRAIN_PER_CLASS (dev only), which would make scheduler lengths off
+        "train_size": config.TRAIN_PER_CLASS * config.NUM_CLASSES,
     }
 
 
@@ -119,6 +123,12 @@ async def run_events(run_id: str):
 
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/api/runs/{run_id}/curve")
+def run_curve(run_id: str):
+    """The run's training loss as [epoch progress, loss] points, for overlaying runs."""
+    return [[e["progress"], e["loss"]] for e in get_run(run_id).events if e["event"] == "step"]
 
 
 @app.post("/api/runs/{run_id}/stop")

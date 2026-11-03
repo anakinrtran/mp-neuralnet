@@ -29,6 +29,11 @@ export function categoryToolbox(blocksByStage) {
 }
 
 export function defineBlocks(cfg) {
+  if (!Blockly.Extensions.isRegistered("default_batch")) {
+    Blockly.Extensions.register("default_batch", function () {
+      this.setFieldValue(String(cfg.batch_default), "BATCH");
+    });
+  }
   Blockly.common.defineBlocksWithJsonArray([
     {
       type: "load_data",
@@ -94,7 +99,7 @@ export function defineBlocks(cfg) {
       previousStatement: "Layer",
       nextStatement: "Layer",
       colour: CATEGORY_COLORS.model,
-      tooltip: "Keeps positive numbers and turns negative ones into 0. Put it after a hidden Linear layer or a Conv layer.",
+      tooltip: "Keeps positive numbers and turns negative ones into 0.",
     },
     {
       type: "train",
@@ -106,6 +111,65 @@ export function defineBlocks(cfg) {
       colour: CATEGORY_COLORS.training,
       tooltip: "Shows the model every training image once per epoch and adjusts its weights " +
                "(Adam optimizer, learning rate 0.001).",
+    },
+    {
+      type: "batchnorm",
+      message0: "BatchNorm",
+      previousStatement: "Layer",
+      nextStatement: "Layer",
+      colour: CATEGORY_COLORS.model,
+      tooltip: "Keeps the numbers flowing out of the layer above in a steady range, so training " +
+               "stays stable even with bigger steps.",
+    },
+    {
+      type: "optimizer",
+      message0: "Optimizer  %1  learning rate %2",
+      args0: [
+        { type: "field_dropdown", name: "KIND",
+          options: [["SGD", "sgd"], ["SGD + momentum", "momentum"], ["Adam", "adam"]] },
+        { type: "field_number", name: "LR", value: 0.01, min: 0.00001, max: 100 },
+      ],
+      previousStatement: "Step",
+      nextStatement: "Step",
+      colour: CATEGORY_COLORS.training,
+      tooltip: "How the model nudges its weights after each group of characters. The learning " +
+               "rate is the size of each nudge.",
+    },
+    {
+      type: "scheduler",
+      message0: "Scheduler  %1",
+      args0: [{ type: "field_dropdown", name: "KIND",
+                options: [["step decay (×0.1 each epoch)", "step"], ["cosine (glide to 0)", "cosine"]] }],
+      previousStatement: "Step",
+      nextStatement: "Step",
+      colour: CATEGORY_COLORS.training,
+      tooltip: "Changes the learning rate during training: big steps early, smaller steps later. Optional.",
+    },
+    {
+      type: "loss",
+      message0: "Loss  %1",
+      args0: [{ type: "field_dropdown", name: "KIND",
+                options: [["cross-entropy", "ce"], ["mean squared error (MSE)", "mse"]] }],
+      previousStatement: "Step",
+      nextStatement: "Step",
+      colour: CATEGORY_COLORS.training,
+      tooltip: "How a wrong guess is scored. Training tries to make this number small.",
+    },
+    {
+      type: "train_settings",
+      message0: "Train  for %1 epochs  batch size %2",
+      args0: [
+        { type: "field_number", name: "EPOCHS", value: cfg.epochs.default,
+          min: 1, max: cfg.epochs.max, precision: 1 },
+        { type: "field_dropdown", name: "BATCH",
+          options: cfg.batch_sizes.map((n) => [String(n), String(n)]) },
+      ],
+      previousStatement: "Step",
+      nextStatement: "Step",
+      colour: CATEGORY_COLORS.training,
+      tooltip: "Trains with the Optimizer, Loss and (optional) Scheduler above it. The batch size " +
+               "is how many characters are in each group the model learns from at once.",
+      extensions: ["default_batch"],
     },
     {
       type: "evaluate",
@@ -121,7 +185,7 @@ export function defineBlocks(cfg) {
       previousStatement: "Step",
       nextStatement: "Step",
       colour: CATEGORY_COLORS.evaluation,
-      tooltip: "Reads all 1,024 characters of the practice image and colors each pixel by the predicted class.",
+      tooltip: "Reads every character of the practice image and colors each pixel by the predicted class.",
     },
   ]);
 }

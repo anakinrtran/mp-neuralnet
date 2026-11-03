@@ -156,7 +156,11 @@ td.num { font-variant-numeric: tabular-nums; }
 .filters canvas.kernel { width: 30px; height: 30px; }
 .filters canvas.output { width: 56px; height: 56px; }
 
-.onestep-controls { display: flex; gap: 8px; margin-bottom: 10px; }
+.onestep-controls { display: flex; gap: 8px; margin-top: 4px; }
+.line-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; margin-top: 4px; }
+.line-legend span::before { content: ""; display: inline-block; width: 14px; height: 3px; margin-right: 5px;
+  vertical-align: middle; background: var(--line-color); }
+#history td.pick { width: 1px; }
 .stages { padding-left: 20px; margin: 0; }
 .stages li { margin-bottom: 14px; }
 .stages .figs { display: flex; gap: 8px; margin-top: 6px; }

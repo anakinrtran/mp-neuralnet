@@ -62,6 +62,21 @@ WORKSPACES = {ws.id: ws for ws in [
         max_epochs=4,
         threads=0,
     ),
+    Workspace(
+        id="ws3",
+        title="Training methods",
+        question="ws3-training",
+        practice_image="workspace3_mountains.png",  # 64x64
+        # Baselines (mountains, 2 epochs, seeds 0-2; students always get seed 0, listed first):
+        # start (SGD lr 10) 2.6/0/0%, SGD 0.1 88.5/89.5/87.9%, Adam 1e-3 + MSE 90.5/90.0/90.1%,
+        # Adam 1e-3 91.5/91.9/91.9%, SGD + momentum 0.05 92.5/94.0/93.3%,
+        # Adam 3e-3 + BatchNorm + cosine 95.6/95.1/95.5%. 0.93: undoing the broken setting isn't
+        # enough; students must tune or stabilize. The 2-epoch budget is enforced by train().
+        threshold=0.93,
+        default_epochs=2,
+        max_epochs=2,
+        threads=0,
+    ),
 ]}
 
 

@@ -4,6 +4,7 @@ practice image) are in workspaces.py."""
 # Training data and fixed training settings (students control these from Workspace 3 on).
 TRAIN_PER_CLASS = 2368
 BATCH_SIZE = 128
+BATCH_SIZES = (16, 32, 64, 128, 256, 512, 1024)  # choices on the Train block (Workspace 3+)
 LEARNING_RATE = 1e-3
 
 # Hidden layer size limits for the Linear block.
