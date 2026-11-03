@@ -55,8 +55,9 @@ WORKSPACES = {ws.id: ws for ws in [
         question="ws2-cnn",
         practice_image="workspace2_sea.png",
         # Baselines (sea, 2 epochs, 3 seeds): WS1 model 88.9-90.3%, one Conv stage 92.1-93.5%,
-        # two Conv stages 94.3-96.2%. 0.91 passes any working CNN; the grader also requires a Conv layer.
-        threshold=0.91,
+        # two Conv stages 94.3-96.2% (one stage: 92.0% under PrairieLearn's CPU cap). The grader also
+        # requires a Conv layer, so 0.90 only has to catch a CNN that didn't train properly.
+        threshold=0.90,
         default_epochs=2,
         max_epochs=4,
         threads=0,

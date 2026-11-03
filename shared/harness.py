@@ -250,11 +250,10 @@ def load_trained_model(code_path, weights_path):
     return _state["model"]
 
 
-def _cpu_limit() -> int:
+def _cpu_limit(cg: Path = Path("/sys/fs/cgroup")) -> int:
     """CPUs this process may really use: the container's CPU quota if it has one. PrairieLearn
     caps workspaces (0.9 CPU locally) while they still see every core, and torch's default
     thread count then oversubscribes the cap (a CNN run took 12x longer)."""
-    cg = Path("/sys/fs/cgroup")
     try:
         if (cg / "cpu.max").exists():  # cgroup v2: "max 100000" or "90000 100000"
             quota, period = (cg / "cpu.max").read_text().split()
