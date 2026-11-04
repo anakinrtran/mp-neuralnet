@@ -183,6 +183,10 @@ td.num { font-variant-numeric: tabular-nums; }
 .class-chip { display: inline-block; width: 12px; height: 12px; border: 1px solid var(--border); vertical-align: -1px; margin-right: 4px; }
 
 /* Workspace 4: confusion matrix, worst mistakes */
+.confusion-row { display: flex; gap: 14px; align-items: flex-start; }
+.confusion-row .note { margin-top: 0; min-width: 140px; }
+#confusion-view { position: relative; flex: none; }
+#confusion-view[hidden] { display: none; }
 #confusion-canvas { display: block; cursor: crosshair; }
 .mistakes { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 8px; }
 .mistakes figure { margin: 0; text-align: center; font-size: 12px; }

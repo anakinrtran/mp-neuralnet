@@ -16,22 +16,46 @@ export const BLOCK_OPTIONS = { trainSize: true, weightDecay: true };
 export const STEPS = `
   <ol class="steps">
     <li><b>Overfit on purpose.</b> This model is big, and it trains on only 100 characters per class.
-      Click <b>▶ Run</b> and watch <b>Training</b>: training accuracy and validation accuracy are drawn
-      on the same chart. When do they pull apart? Where does each one end up? What is the model
-      doing with its training characters?</li>
-    <li><b>Try each fix alone.</b> Dropout, weight decay (on the Optimizer), Augment training images
-      (rotate or shift) and Early stopping: add one at a time to the starting blocks and run it.
-      In <b>Compare runs</b>, tick the runs to overlay their validation accuracy. Which fix closes the
-      gap between training and validation the most? Which raises validation accuracy the most?</li>
-    <li><b>The flip trap.</b> Tick <i>mirror left↔right</i> on Augment training images. What happens to
-      validation accuracy? Picture a few characters in a mirror: why might that be?</li>
-    <li><b>Confusion matrix.</b> Add <b>Confusion matrix</b> at the end of your program and run it. In the
-      <b>Confusion matrix</b> tab, find your model's three worst confusions. Which of them are look-alike
-      pairs?</li>
-    <li><b>Worst mistakes.</b> Add <b>Worst mistakes</b> and run it. These are the wrong guesses your model
-      was most sure about. Would a person get them right?</li>
-    <li><b>Combine.</b> Build the best model you can on the small training set. Do the fixes add up when
-      you use them together? You can also change the model itself, and train for up to 60 epochs.</li>
+      Click <b>▶ Run</b> (about a minute) and watch <b>Training</b>: training accuracy and validation
+      accuracy are drawn on the same chart. When do they pull apart? Where does each one end up? What is
+      the model doing with its training characters? Keep this run: it's the one to beat.</li>
+    <li><b>Try each fix alone.</b> Add one fix to the starting blocks, run, and undo it before trying the
+      next. In <b>Compare runs</b>, tick the runs to overlay their validation accuracy with your first
+      run. For each fix, ask two things: does it close the gap between training and validation, and does it
+      raise the <i>top</i> of the validation curve?
+      <ul>
+        <li><b>Dropout</b> switches off a random share of units (p) in the layer before it, at every
+          training step, so no single unit can memorize a character. Which layer of this model has by far
+          the most weights to memorize with? Dropout belongs right after it (after its ReLU). How big a
+          share can you switch off and still leave enough units to learn?</li>
+        <li><b>Weight decay</b> (on the Optimizer) pulls every weight a little toward zero at each step, so
+          the model can't lean on a few huge weights. Small values such as 0.001 are typical: does it
+          change the gap much here?</li>
+        <li><b>Augment training images</b> shows the model a slightly changed copy of each training
+          character every time it sees it, so 100 characters act like many more. The question that
+          decides which changes are safe: after the change, is it still the same character? Would a
+          person write a 7 slightly tilted, or a little off-center?</li>
+        <li><b>The mirroring trap.</b> Now tick <i>mirror left↔right</i> as well. What happens to
+          validation accuracy? Picture a few characters (E, J, 3, 7) in a mirror: why might that be?</li>
+        <li><b>Early stopping</b> watches validation accuracy and stops once it hasn't improved for
+          <i>patience</i> epochs, then keeps the weights from the best epoch. Look at your first run's
+          validation curve: in which epoch did it peak? Can early stopping make that peak higher, or only
+          keep you from sliding past it?</li>
+      </ul></li>
+    <li><b>Visualize your model's mistakes.</b> Add <b>Confusion matrix</b> and <b>Worst mistakes</b> at the
+      end of your program and run it. In <b>Confusion matrix</b>, find your model's three worst
+      confusions: which are look-alike pairs that even you would struggle with? <b>Worst mistakes</b>
+      shows the wrong guesses your model was most sure about: would a person get them right? Which kind
+      of mistake could a fix from step 2 still remove?</li>
+    <li><b>Combine.</b> Build the best model you can on the small training set. Before each run, ask:
+      <ul>
+        <li>Which fixes raised the top of the validation curve, and which only changed where it stopped?
+          Start from the ones that raised it.</li>
+        <li>With augmentation, the model sees new versions of every character each epoch, so it can keep
+          improving for longer. Is your validation curve still climbing at the last epoch? Then more
+          epochs (up to 60) can help, and early stopping makes a long run safe because it keeps the best
+          epoch. Every 20 epochs take about a minute.</li>
+      </ul></li>
     <li><b>Grade.</b> Save &amp; Grade decodes a held-out test image whose characters aren't in this
       workspace, so you can't tune on it. Validation accuracy is your best guess of how it will go.
       <span id="submit-note"></span></li>

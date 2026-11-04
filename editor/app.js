@@ -562,8 +562,8 @@ async function renderOverlay() {
 
 // ---------- confusion matrix and worst mistakes (Workspace 4 on) ----------
 
-const CELL = 13;
-const LABEL_SPACE = 16;
+const LABEL_SPACE = 14;
+let confusionCell = 10;  // cell size in the tab, fitted to the panel's height
 
 function renderConfusion() {
   const data = runInfo.confusion;
@@ -571,10 +571,14 @@ function renderConfusion() {
   $("confusion-note").innerHTML = data
     ? `Run ${runNumber(shownRun) || history.length}: what your model guessed for each validation character.`
     : "Add <b>Confusion matrix</b> (in Evaluation) to the end of your program and run it.";
-  if (data) drawConfusion($("confusion-canvas"), data.matrix);
+  if (!data) return;
+  const panel = $("tab-confusion");
+  const room = panel.clientHeight - $("confusion-note").offsetHeight - 40 - LABEL_SPACE;
+  confusionCell = room > 0 ? Math.max(7, Math.min(12, Math.floor(room / cfg.num_classes))) : 10;
+  drawConfusion($("confusion-canvas"), data.matrix, confusionCell);
 }
 
-function drawConfusion(canvas, matrix) {
+function drawConfusion(canvas, matrix, CELL = 10) {
   const n = cfg.num_classes;
   const size = LABEL_SPACE + n * CELL;
   const dpr = window.devicePixelRatio || 1;
@@ -582,7 +586,7 @@ function drawConfusion(canvas, matrix) {
   canvas.style.width = canvas.style.height = `${size}px`;
   const ctx = canvas.getContext("2d");
   ctx.scale(dpr, dpr);
-  ctx.font = "9px system-ui, sans-serif";
+  ctx.font = `${Math.min(9, CELL)}px system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.fillStyle = "#5f6b7a";
   for (let i = 0; i < n; i++) {
@@ -601,17 +605,26 @@ function drawConfusion(canvas, matrix) {
   });
 }
 
+let confusionTip;
+
 function hoverConfusion(ev) {
   const data = runInfo.confusion;
-  if (!data) return;
-  const g = Math.floor((ev.offsetX - LABEL_SPACE) / CELL);
-  const t = Math.floor((ev.offsetY - LABEL_SPACE) / CELL);
-  if (g < 0 || t < 0 || g >= cfg.num_classes || t >= cfg.num_classes) return;
+  if (!confusionTip) {
+    confusionTip = document.createElement("div");
+    confusionTip.className = "tooltip";
+    $("confusion-view").appendChild(confusionTip);
+  }
+  const g = Math.floor((ev.offsetX - LABEL_SPACE) / confusionCell);
+  const t = Math.floor((ev.offsetY - LABEL_SPACE) / confusionCell);
+  confusionTip.hidden = !data || g < 0 || t < 0 || g >= cfg.num_classes || t >= cfg.num_classes;
+  if (confusionTip.hidden) return;
   const count = data.matrix[t][g];
   const [tc, gc] = [cfg.classes[t], cfg.classes[g]];
-  $("confusion-hover").innerHTML = t === g
-    ? `<b>${tc}</b> read as ${tc}: <b>${count}</b> of 100 right.`
-    : `<b>${tc}</b> read as <b>${gc}</b>: ${count} time${count === 1 ? "" : "s"}.`;
+  confusionTip.innerHTML = t === g
+    ? `<b>${tc}</b> read as ${tc}: <b>${count}</b> of 100 right`
+    : `<b>${tc}</b> read as <b>${gc}</b>: ${count} time${count === 1 ? "" : "s"}`;
+  confusionTip.style.left = `${ev.offsetX + 12}px`;
+  confusionTip.style.top = `${ev.offsetY + 12}px`;
 }
 
 function renderMistakes() {
@@ -1130,6 +1143,7 @@ async function main() {
   };
   $("practice-canvas").addEventListener("mousemove", hoverPractice);
   $("confusion-canvas").addEventListener("mousemove", hoverConfusion);
+  $("confusion-canvas").addEventListener("mouseleave", () => { if (confusionTip) confusionTip.hidden = true; });
   $("upload-file").addEventListener("change", (ev) => uploadImage(ev.target.files[0]));
   $("card-download").onclick = downloadCard;
   $("filters-slider").addEventListener("input", drawSnapshot);

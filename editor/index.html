@@ -140,13 +140,14 @@
 
         <div class="panel" id="tab-confusion" hidden>
           <p id="confusion-note" class="note"></p>
-          <div id="confusion-view" hidden>
-            <canvas id="confusion-canvas" aria-label="Confusion matrix"></canvas>
-            <p id="confusion-hover" class="muted">Point at a cell to see its count.</p>
+          <div class="confusion-row">
+            <div id="confusion-view" hidden>
+              <canvas id="confusion-canvas" aria-label="Confusion matrix"></canvas>
+            </div>
+            <p class="note">Rows: the true character (100 validation characters each). Columns: what the model
+              guessed. Green diagonal: right guesses. Red cells: mix-ups, brighter = more often. Point at a
+              cell for its count.</p>
           </div>
-          <p class="note">Each row is a true character, each column what the model guessed; every row has the
-            same 100 validation characters. The diagonal (green) counts right guesses. Every other bright
-            cell (red) is a mix-up: the brighter, the more often.</p>
         </div>
 
         <div class="panel" id="tab-mistakes" hidden>
