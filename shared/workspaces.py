@@ -128,13 +128,16 @@ WORKSPACES = {ws.id: ws for ws in [
         # shortcut: reuses Workspace 3's mountains with fresh characters; drop in a new PNG and
         # rerun data/make_practice.py ws5 to change it
         practice_image="workspace3_mountains.png",
-        # Graded on the hidden 128x88 grid. Baselines (benchmark_ws45.py ws5, Adam 1e-3, 2 epochs, seeds
-        # 0-2): linear 81.2/81.1/81.3%, ReLU-128 88.7/88.1/88.3%, one Conv stage 92.3/92.6/92.6%, two
-        # stages 95.0/94.0/94.6% (3 epochs 95.4/95.3/95.3%). 0.90: any plain CNN passes; linear and MLP models fail.
-        threshold=0.90,
-        default_epochs=2,
-        max_epochs=3,
+        # Graded on the hidden 128x88 grid, trained on Workspace 4's small set. Baselines (benchmark_ws45.py
+        # ws5, Adam 1e-3, 100 per class, 20 epochs, seeds 0-2): linear 75.8/75.7/76.1%, MLP 512-512
+        # 84.2/84.3/84.4%, WS4's start CNN 85.4/86.4/85.4%, + dropout 87.8/87.2/86.7%, + rotate+shift
+        # 89.9/89.2/89.9%, dropout + rotate+shift 40 epochs, early stopping 8 92.5/91.1/91.3% (two Conv
+        # stages 92.1/91.6/92.5%). 0.88, as in WS4: what fails WS4 fails here; the class image stays imperfect.
+        threshold=0.88,
+        default_epochs=20,
+        max_epochs=60,
         threads=0,
+        train_per_class=100,  # Workspace 4's small set, so regularization still matters
         train_accuracy=True,
         graded_grid="hidden",
         graded_image="ws5_ClassImage_LARGE.png",  # shrunk by make_practice.py; never shown

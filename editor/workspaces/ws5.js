@@ -8,17 +8,18 @@ export const TABS = ["steps", "training", "compare", "confusion", "mistakes", "p
 
 export const COMPARE_CURVES = "val";
 
-// The full training set again, so no size field; Optimizer keeps weight decay.
-export const BLOCK_OPTIONS = { weightDecay: true };
+// Workspace 4's small training set and blocks.
+export const BLOCK_OPTIONS = { trainSize: true, weightDecay: true };
 
 export const STEPS = `
   <ol class="steps">
-    <li><b>Build your best network.</b> The Model is empty, and this time it trains on the full training
-      set. Use what you learned in Workspaces 1–4: which layers, which training settings, which ways to
-      keep it from memorizing. A run has at most 3 epochs, so check how long each one takes.</li>
+    <li><b>Build your best network.</b> The Model is empty, and it trains on Workspace 4's small set:
+      100 characters per class. Use what you learned in Workspaces 1–4: which layers, which training
+      settings, and which ways to keep it from memorizing. Runs can have up to 60 epochs (about a minute
+      per 20), so think before each run: what do you expect to change, and which chart will show it?</li>
     <li><b>Check it.</b> Look at <b>Training</b>, <b>Confusion matrix</b>, <b>Worst mistakes</b> and the
       <b>Practice image</b>. Where is it still weak?</li>
-    <li><b>Your image.</b> In <b>Your image</b>, choose any picture. You'll see each step of the encoding:
+    <li><b>Your image.</b> Once your model has trained, choose any picture in <b>Your image</b>. You'll see each step of the encoding:
       your picture shrunk, reduced to a few colors, written in handwritten characters, and what your model
       reads back. Download the result to share it with the class.</li>
     <li><b>Model card.</b> <b>Model card</b> describes your latest finished run: what it is, how it was
@@ -47,11 +48,11 @@ export const START_STATE = {
     blocks: [{
       x: 40, y: 40,
       ...chain(
-        { type: "load_data" },
+        { type: "load_data", fields: { PER_CLASS: 100 } },
         { type: "model" },
         { type: "optimizer", fields: { KIND: "adam", LR: 0.001, WD: 0 } },
         { type: "loss", fields: { KIND: "ce" } },
-        { type: "train_settings", fields: { EPOCHS: 2, BATCH: "128" } },
+        { type: "train_settings", fields: { EPOCHS: 20, BATCH: "128" } },
         { type: "evaluate" },
         { type: "confusion_matrix" },
         { type: "worst_mistakes" },

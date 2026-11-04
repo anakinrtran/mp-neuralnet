@@ -62,12 +62,14 @@ SETUPS = {
         "CNN dropout + rotate+shift": code(CNN, 20, drop=0.5, augment=("rotate", "shift")),
         "CNN dropout + rotate+shift 40": code(CNN, 40, drop=0.5, augment=("rotate", "shift"), patience=8),
     },
-    "ws5": {
-        "linear": code(LINEAR, 2),
-        "MLP 128": code("nn.Flatten(), nn.LazyLinear(128), nn.ReLU(), nn.LazyLinear(36)", 2),
-        "CNN one stage": code(CNN1, 2),
-        "CNN two stages": code(CNN2, 2),
-        "CNN two stages 3 epochs": code(CNN2, 3),
+    "ws5": {  # Workspace 4's small training set (100 per class)
+        "linear": code(LINEAR, 20),
+        "start MLP": code(MLP, 20),
+        "CNN": code(CNN, 20),
+        "CNN dropout 0.5": code(CNN, 20, drop=0.5),
+        "CNN rotate+shift": code(CNN, 20, augment=("rotate", "shift")),
+        "CNN dropout + rotate+shift 40": code(CNN, 40, drop=0.5, augment=("rotate", "shift"), patience=8),
+        "CNN2 dropout + rotate+shift 40": code(CNN2, 40, drop=0.5, augment=("rotate", "shift"), patience=8),
     },
 }
 
