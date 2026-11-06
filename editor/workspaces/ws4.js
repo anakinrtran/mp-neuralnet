@@ -13,8 +13,8 @@ export const COMPARE_CURVES = "val";
 // Load data gets a training-set size field; Optimizer gets weight decay.
 export const BLOCK_OPTIONS = { trainSize: true, weightDecay: true };
 
-export const STEPS = `
-  <ol class="steps">
+// The generalization steps, shared with Workspace 5 (which keeps Workspace 4's content).
+export const GENERALIZATION_STEPS = `
     <li><b>Overfit on purpose.</b> This model is big, and it trains on only 100 characters per class.
       Click <b>▶ Run</b> (about a minute) and watch <b>Training</b>: training accuracy and validation
       accuracy are drawn on the same chart. When do they pull apart? Where does each one end up? What is
@@ -56,7 +56,11 @@ export const STEPS = `
           epochs (up to 60) can help, and early stopping makes a long run safe because it keeps the best
           epoch. Every 20 epochs take about a minute.</li>
       </ul></li>
-    <li><b>Grade.</b> Save &amp; Grade decodes a held-out test image whose characters aren't in this
+`;
+
+export const STEPS = `
+  <ol class="steps">
+${GENERALIZATION_STEPS}    <li><b>Grade.</b> Save &amp; Grade decodes a held-out test image whose characters aren't in this
       workspace, so you can't tune on it.
       <span id="submit-note"></span></li>
   </ol>`;

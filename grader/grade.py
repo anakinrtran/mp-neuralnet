@@ -75,8 +75,10 @@ def ws4_hint(layers: list[str]) -> str:
 
 def ws5_hint(layers: list[str]) -> str:
     if not any(name.startswith("Conv") for name in layers):
-        return "Which kind of layer did best on images in Workspaces 2-4? Run it, then Save & Grade again."
-    return "Use what worked best in Workspaces 3 and 4, run it, then Save & Grade again."
+        return "Which kind of layer did best on images in Workspaces 2 and 3? Run it, then Save & Grade again."
+    return ("Look at your training and validation accuracy in the workspace: how far apart do they end up? "
+            "Which fixes raised the top of your validation curve, and have you combined them? "
+            "Run it, then Save & Grade again.")
 
 
 # What to suggest when a submission falls short, per workspace, given the model's layer names.

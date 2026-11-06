@@ -126,17 +126,17 @@ WORKSPACES = {ws.id: ws for ws in [
     ),
     Workspace(
         id="ws5",
-        title="Ship it",
+        title="Generalize and ship it",
         question="ws5-ship-it",
-        # shortcut: reuses Workspace 3's mountains with fresh characters; drop in a new PNG and
-        # rerun data/make_practice.py ws5 to change it
-        practice_image="workspace3_mountains.png",
-        # Graded on the hidden 128x88 grid, trained on Workspace 4's small set. Baselines (benchmark_ws45.py
-        # ws5, Adam 1e-3, 100 per class, 20 epochs, seeds 0-2): linear 75.8/75.7/76.1%, MLP 512-512
-        # 84.2/84.3/84.4%, WS4's start CNN 85.4/86.4/85.4%, + dropout 87.8/87.2/86.7%, + rotate+shift
-        # 89.9/89.2/89.9%, dropout + rotate+shift 40 epochs, early stopping 8 92.5/91.1/91.3% (two Conv
-        # stages 92.1/91.6/92.5%). 0.88, as in WS4: what fails WS4 fails here; the class image stays imperfect.
-        threshold=0.88,
+        practice_image="workspace4_underwater.png",  # Workspace 4's picture; WS4 itself is unused
+        # Workspace 4's content plus shipping; graded on the hidden 128x88 grid, which also does the held-out
+        # grid's job. Baselines (benchmark_ws45.py ws5, seed 0, 100 per class, 20 epochs; hidden / validation):
+        # linear 75.8/76.0%, MLP 84.2/84.6%, start CNN 85.4/85.8%, + dropout 0.3/0.5/0.7 86.8/87.8/86.4%
+        # (val 86.9/87.4/86.5%), + weight decay 1e-3 85.5%, + early stopping 5 85.2%, + rotate 87.8/88.9%,
+        # + shift 90.9%, + rotate+shift 89.9/90.9%, + rotate+shift+mirror 79.0%, dropout + rotate+shift 40 epochs
+        # 92.5/92.2%. Earlier seeds 1-2: start 86.4/85.4%, dropout 0.5 87.2/86.7%. 0.87: the start fails; dropout
+        # 0.5 or the Augment block's default (rotate) passes on the 2nd run. Validation tracks hidden within ~1 point.
+        threshold=0.87,
         default_epochs=20,
         max_epochs=60,
         threads=0,
