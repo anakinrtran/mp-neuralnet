@@ -57,7 +57,7 @@ export const STEPS = `
           epoch. Every 20 epochs take about a minute.</li>
       </ul></li>
     <li><b>Grade.</b> Save &amp; Grade decodes a held-out test image whose characters aren't in this
-      workspace, so you can't tune on it. Validation accuracy is your best guess of how it will go.
+      workspace, so you can't tune on it.
       <span id="submit-note"></span></li>
   </ol>`;
 

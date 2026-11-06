@@ -384,8 +384,9 @@ def predict_probs(model, images: torch.Tensor) -> np.ndarray:
 
 
 def accuracy(model, data: TensorDataset) -> float:
+    """Share of characters guessed right, counting look-alike mix-ups (0/O, ...) as right, like the grader."""
     images, labels = data.tensors
-    return float((predict(model, images) == labels.numpy()).mean())
+    return float((VISIBLE_GROUP[predict(model, images)] == VISIBLE_GROUP[labels.numpy()]).mean())
 
 
 def predict_practice(model) -> np.ndarray:

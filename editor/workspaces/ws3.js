@@ -18,16 +18,32 @@ export const STEPS = `
       characters score?</li>
     <li><b>Diagnose it.</b> Open <b>Gradients</b>. How much does each layer change per step,
       at the very start and later on? What does that tell you about what went wrong? Fix the
-      training blocks so the model learns again. Leave the Model alone for now.</li>
-    <li><b>Compare optimizers.</b> Try SGD, SGD + momentum and Adam, each at a learning rate that
-      suits it. In <b>Compare runs</b>, overlay their loss curves. Which drops fastest? Which
-      is the bumpiest?</li>
-    <li><b>Batch size.</b> Try a much smaller and a much larger batch. What changes: the run time,
-      how bumpy the loss curve is, the final accuracy?</li>
-    <li><b>Loss function.</b> Swap cross-entropy for MSE. What happens to the loss curve and to
-      accuracy? Why might that be?</li>
-    <li><b>Stabilize.</b> Add BatchNorm to your model, and try a Scheduler. Can you use a bigger
-      learning rate now? What does <b>Gradients</b> show?</li>
+      training blocks so the model learns again. Leave the Model alone for now.
+      <ul>
+        <li>Change a learning rate by factors of ten (10, 1, 0.1, 0.01, 0.001), not by small tweaks:
+          a run takes about a minute, and a small tweak rarely shows.</li>
+      </ul></li>
+    <li><b>Compare optimizers.</b> Try SGD + momentum and Adam. Each needs its own learning rate: start
+      SGD + momentum at 0.1 and Adam at 0.001, one run each. In <b>Compare runs</b>, overlay their
+      loss curves with your plain SGD run. Which drops fastest? Which is the bumpiest?</li>
+    <li><b>Batch size</b> (one or two runs). Try a much smaller and a much larger batch. What changes:
+      the run time, how bumpy the loss curve is, the final accuracy?</li>
+    <li><b>Loss function</b> (one run). Swap cross-entropy for MSE. What happens to the loss curve and
+      to accuracy? Why might that be?</li>
+    <li><b>Stabilize.</b> Two tools that make training steadier. Try each as a pair of runs that differ
+      in that one thing.
+      <ul>
+        <li><b>BatchNorm</b> goes right after a Conv, before its ReLU: Conv → BatchNorm → ReLU. (It can
+          also go after the hidden Linear, before its ReLU.) Add it to plain SGD at 0.1, which you
+          already ran without it. In <b>Compare runs</b>, how do the two loss curves differ? Where does
+          validation accuracy end up?</li>
+        <li><b>Scheduler</b> goes between the Optimizer and Train. It changes the learning rate during the
+          run: big steps early, small steps late. Add cosine to your best Adam or SGD + momentum run and
+          change nothing else. Its effect is easiest to see in <b>Gradients</b>: what happens to the
+          update sizes toward the end of the run? A scheduler shrinks your steps, so it helps most when
+          the learning rate is on the high side. If it made things worse, try it with a learning rate
+          ten times higher.</li>
+      </ul></li>
     <li><b>Beat the budget.</b> You only get 2 epochs, so good training choices are what count.
       <b>Practice image</b> shows what your model reads.</li>
     <li><b>Grade.</b> <span id="submit-note"></span></li>

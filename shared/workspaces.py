@@ -92,9 +92,12 @@ WORKSPACES = {ws.id: ws for ws in [
         # Baselines (mountains, 2 epochs, seeds 0-2; students always get seed 0, listed first):
         # start (SGD lr 10) 2.6/0/0%, SGD 0.1 88.5/89.5/87.9%, Adam 1e-3 + MSE 90.5/90.0/90.1%,
         # Adam 1e-3 91.5/91.9/91.9%, SGD + momentum 0.05 92.5/94.0/93.3%,
-        # Adam 3e-3 + BatchNorm + cosine 95.6/95.1/95.5%. 0.93: undoing the broken setting isn't
-        # enough; students must tune or stabilize. The 2-epoch budget is enforced by train().
-        threshold=0.93,
+        # Adam 3e-3 + BatchNorm + cosine 95.6/95.1/95.5%. Grid (benchmark_ws3.py --grid, seed 0; BatchNorm
+        # after the Conv): SGD 0.1 88.5%, + BatchNorm 93.1%; SGD+mom 0.1 92.7%; Adam 0.001 91.5%, + BatchNorm
+        # 93.1%, + cosine 89.7%; Adam 0.01 92.5%, + cosine 94.0%; SGD+mom 0.1 + cosine 94.5%. 0.92: following
+        # the steps (factors of ten, then SGD + momentum 0.1) passes by the 4th run. The 2-epoch budget is
+        # enforced by train().
+        threshold=0.92,
         default_epochs=2,
         max_epochs=2,
         threads=0,

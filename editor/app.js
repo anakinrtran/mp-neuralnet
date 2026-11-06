@@ -274,19 +274,32 @@ setInterval(() => {
 
 const runNumber = (id) => history.findIndex((r) => r.id === id) + 1;
 
+/** The pass mark, as the Grade step states it before the first Save & Grade. */
+function passText() {
+  const mark = `${+(cfg.threshold * 100).toFixed(1)}%`;
+  if (cfg.graded_grid === "practice") {
+    return `To pass, at least <b>${mark}</b> of the practice image's pixels must come out right ` +
+      "(look-alikes such as 0/O count as right). Validation accuracy is a rough guide: the practice image " +
+      "usually lands within a couple of points of it. ";
+  }
+  const image = cfg.graded_grid === "hidden" ? "hidden class image" : "held-out image";
+  return `To pass, at least <b>${mark}</b> of the ${image}'s pixels must come out right. You can't see it, ` +
+    `so aim for about ${mark} validation accuracy: the ${image} usually lands within a couple of points of it. `;
+}
+
 async function refreshSubmission() {
   ({ submission } = await api("api/submission").catch(() => ({ submission: null })));
   const chip = $("graded");
   const note = $("submit-note");
   if (!submission) {
     chip.textContent = "";
-    if (note) note.textContent = "Finish a run first. Every finished run is saved for grading.";
+    if (note) note.innerHTML = passText() + "Finish a run first. Every finished run is saved for grading.";
     return;
   }
   const n = runNumber(submission.run_id);
   chip.textContent = `Save & Grade grades run ${n} · ${pct(submission.val_accuracy)}`;
   if (note) {
-    note.innerHTML = `<span class="ok">✓ Run ${n} is saved for grading ` +
+    note.innerHTML = passText() + `<span class="ok">✓ Run ${n} is saved for grading ` +
       `(${layersText(submission.layers)}, ${pct(submission.val_accuracy)} validation accuracy).</span> ` +
       "Go back to the PrairieLearn question page and click <b>Save &amp; Grade</b>. " +
       "Each new finished run replaces it.";
@@ -348,6 +361,15 @@ function drawChart(chart) {
   const every = Math.ceil(chart.xMax / 10);
   for (let e = 0; e <= chart.xMax; e += every) ctx.fillText(e, x(e), h - pad.b + 14);
   ctx.fillText("epochs", (pad.l + w - pad.r) / 2, h - 4);
+
+  if (chart.passMark) {
+    ctx.strokeStyle = color("--ink-muted");
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(pad.l, y(chart.passMark)); ctx.lineTo(w - pad.r, y(chart.passMark)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.textAlign = "left";
+    ctx.fillText("pass mark", pad.l + 4, y(chart.passMark) - 4);
+  }
 
   // points2: a second line (training accuracy, Workspace 4 on), drawn under the first
   for (const [line, name] of [[chart.points2 || [], "--chart-line-2"], [points, "--chart-line"]]) {
@@ -732,7 +754,7 @@ function renderCard() {
       ${settings ? `${settings.text}.` : ""} ${start.epochs} epochs${runInfo.train_done ? `, ${Math.round(runInfo.train_done.seconds)}s to train` : ""}.${stop}</p>
     <h3>How well it does</h3>
     <p>Validation accuracy: <b>${val != null ? pct(val) : "—"}</b> on ${n(data.val)} characters it never trained on
-      (100 of each class). Mixing up look-alikes such as 0/O counts as wrong here.</p>
+      (100 of each class). Mixing up look-alikes such as 0/O counts as right here, as in grading.</p>
     <figure class="chart"><figcaption>Training loss</figcaption><canvas id="card-loss"></canvas></figure>
     <figure class="chart"><figcaption>Accuracy (blue: validation, orange: training)</figcaption><canvas id="card-acc"></canvas></figure>
     <h3>Confusion matrix</h3>
@@ -1094,6 +1116,7 @@ function setUpPage() {
 
 async function main() {
   cfg = await api("api/config");
+  charts.acc.passMark = cfg.threshold;
   ws = await import(`./workspaces/${cfg.workspace}.js`);
   setUpPage();
   defineBlocks(cfg, ws.BLOCK_OPTIONS);

@@ -97,6 +97,9 @@ def get_config():
         "train_per_class": {"default": WORKSPACE.train_per_class, "min": harness.MIN_TRAIN_PER_CLASS,
                             "max": WORKSPACE.train_per_class},
         "max_patience": harness.MAX_PATIENCE,
+        # the pass mark, shown up front; graded_grid says which image it applies to
+        "threshold": WORKSPACE.threshold,
+        "graded_grid": WORKSPACE.graded_grid,
     }
 
 
