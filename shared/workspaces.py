@@ -126,8 +126,8 @@ WORKSPACES = {ws.id: ws for ws in [
     ),
     Workspace(
         id="ws4",
-        title="Generalize and ship it",
-        question="ws4-ship-it",
+        title="Generalization and evaluation",
+        question="ws4-generalization",
         practice_image="workspace4_underwater.png",  # ws_unused's picture
         # The old Workspace 4's content plus shipping; graded on the hidden 128x88 grid, which also does the held-out
         # grid's job. Baselines (benchmark_ws45.py ws4, seed 0, 100 per class, 20 epochs; hidden / validation):
