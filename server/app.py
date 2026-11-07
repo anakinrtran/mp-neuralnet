@@ -18,7 +18,7 @@ API
   GET  /api/blocks                    saved blocks (null if none yet)
   PUT  /api/blocks      {blocks}      save blocks
   GET  /api/submission                the run Save & Grade will grade (null if none)
-  POST /api/upload      (image bytes)  Workspace 5: encode a picture and decode it with the latest finished run
+  POST /api/upload      (image bytes)  Workspace 4: encode a picture and decode it with the latest finished run
 
 Environment
   MPNN_WORKSPACE  which workspace this is: ws1, ws2, ... (default ws1)

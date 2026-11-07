@@ -49,8 +49,8 @@ def test_missing_files_are_not_gradable(submission, monkeypatch):
 
 
 def test_hidden_grid_shows_only_accuracy_and_keeps_the_vote(submission, monkeypatch):
-    monkeypatch.setattr(grade, "WORKSPACE", workspaces.get("ws5"))
-    _predicted(monkeypatch, "ws5")
+    monkeypatch.setattr(grade, "WORKSPACE", workspaces.get("ws4"))
+    _predicted(monkeypatch, "ws4")
     grade.main()
     results = json.loads(grade.RESULTS.read_text())
     assert "images" not in results and results["score"] == 1.0

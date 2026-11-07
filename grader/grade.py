@@ -6,8 +6,8 @@ accuracy meets the workspace's threshold (and the model has any layers the works
 e.g. a Conv layer in Workspace 2), else 0.
 
 The graded grid (shared/workspaces.py, graded_grid) is the practice grid in Workspaces 1-3,
-a held-out grid the student never sees in Workspace 4, and the hidden class image in
-Workspace 5. Feedback shows the decoded image next to the original, except for the hidden
+the hidden class image in Workspace 4, and a held-out grid the student never sees in the
+unused workspace (ws_unused). Feedback shows the decoded image next to the original, except for the hidden
 image: there it shows only the accuracy, and results.json also stores the predicted grid
 under "class_vote" (not shown; PrairieLearn keeps it in the submission's feedback, which the
 assessment's submissions CSV downloads include) for scripts/class_vote.py.
@@ -68,19 +68,21 @@ def ws3_hint(layers: list[str]) -> str:
             "Try another optimizer or learning rate, BatchNorm or a scheduler, run it, then Save & Grade again.")
 
 
-def ws4_hint(layers: list[str]) -> str:
+def ws_unused_hint(layers: list[str]) -> str:
     return ("Look at your training and validation accuracy in the workspace: how far apart do they end up? "
             "Which ways of keeping a model from memorizing have you combined? Run it, then Save & Grade again.")
 
 
-def ws5_hint(layers: list[str]) -> str:
+def ws4_hint(layers: list[str]) -> str:
     if not any(name.startswith("Conv") for name in layers):
-        return "Which kind of layer did best on images in Workspaces 2-4? Run it, then Save & Grade again."
-    return "Use what worked best in Workspaces 3 and 4, run it, then Save & Grade again."
+        return "Which kind of layer did best on images in Workspaces 2 and 3? Run it, then Save & Grade again."
+    return ("Look at your training and validation accuracy in the workspace: how far apart do they end up? "
+            "Which fixes raised the top of your validation curve, and have you combined them? "
+            "Run it, then Save & Grade again.")
 
 
 # What to suggest when a submission falls short, per workspace, given the model's layer names.
-FAIL_HINTS = {"ws1": ws1_hint, "ws2": ws2_hint, "ws3": ws3_hint, "ws4": ws4_hint, "ws5": ws5_hint}
+FAIL_HINTS = {"ws1": ws1_hint, "ws2": ws2_hint, "ws3": ws3_hint, "ws4": ws4_hint, "ws_unused": ws_unused_hint}
 
 # How feedback names the graded grid.
 GRID_NAMES = {"practice": "the practice image", "heldout": "the held-out test image",

@@ -19,7 +19,8 @@ An image wider than MAX_GRADED_WIDTH (the class image) is shrunk to the largest 
 GRADED_SIZES whose colors all fit, and the shrunk version is saved next to the source.
 Graded grids use characters no other grid uses (if they fit); practice grids avoid graded ones.
 
-Run:  python data/make_practice.py WS [--refit] [--preview DIR]
+Run:  python data/make_practice.py WS [--refit] [--keep-graded] [--preview DIR]
+With --keep-graded, only the practice grid is rebuilt, avoiding the saved graded grid's characters.
 With --preview, also saves the original, the image in its palette, and the character mosaic.
 """
 
@@ -55,7 +56,7 @@ def practice_fingerprint(chars: np.ndarray) -> str:
 def used_indices(skip: str, graded_only: bool) -> np.ndarray:
     """Test-pool indices used by other saved grids. graded_only (for a practice grid): only other
     workspaces' graded grids; its own graded grid is rebuilt right after it, avoiding it."""
-    ws_id = skip.split("_")[-1]
+    ws_id = skip.split("_", 1)[1]  # "ws4.npz", "ws_unused.npz"
     files = [f for f in PRIVATE.glob("*_ws*.npz") if f.name != skip
              and (not graded_only or not (f.name.startswith("practice_") or f.name.endswith(ws_id)))]
     return np.concatenate([np.load(f)["idx"].ravel() for f in files] or [np.array([], int)])
@@ -109,6 +110,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("workspace", choices=list(workspaces.WORKSPACES))
     parser.add_argument("--refit", action="store_true", help="fit a new palette even if one is saved")
+    parser.add_argument("--keep-graded", action="store_true",
+                        help="rebuild only the practice grid; keep (and avoid) the saved graded grid")
     parser.add_argument("--preview", type=Path, help="also save preview images here")
     args = parser.parse_args()
     ws = workspaces.get(args.workspace)
@@ -128,7 +131,10 @@ def main():
         print("warning: some image colors aren't in the saved palette; they were snapped to the "
               "nearest one. Use --refit if the image changed.")
 
-    idx = build_grid(groups, test["y"], seed=SEED, exclude=used_indices(ws.practice_file, graded_only=True))
+    exclude = used_indices(ws.practice_file, graded_only=True)
+    if args.keep_graded and ws.graded_grid != "practice":
+        exclude = np.concatenate([exclude, np.load(PRIVATE / ws.graded_file)["idx"].ravel()])
+    idx = build_grid(groups, test["y"], seed=SEED, exclude=exclude)
     chars, labels = test["x"][idx], test["y"][idx]
 
     np.savez_compressed(PUBLIC / ws.practice_file, x=chars)
@@ -139,7 +145,7 @@ def main():
 
     counts = np.bincount(groups.ravel(), minlength=len(CLASSES))
     print(f"{ws.id} color groups used:", {group_name(g): int(n) for g, n in enumerate(counts) if n})
-    if ws.graded_grid != "practice":
+    if ws.graded_grid != "practice" and not args.keep_graded:
         make_graded(ws, test)
 
     if args.preview:

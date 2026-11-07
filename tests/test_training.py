@@ -91,7 +91,7 @@ def test_augment_keeps_shape_and_flip_only_mirrors():
 
 def test_small_training_set_limit_is_checked_in_grading_too(monkeypatch):
     from shared import workspaces
-    monkeypatch.setattr(harness, "WORKSPACE", workspaces.get("ws4"))
+    monkeypatch.setattr(harness, "WORKSPACE", workspaces.get("ws_unused"))
     monkeypatch.setitem(harness._state, "mode", "load")
     with pytest.raises(harness.StudentError, match="10 to 100"):
         harness.load_data(train_per_class=2368)

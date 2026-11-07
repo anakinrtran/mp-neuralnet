@@ -14,7 +14,7 @@ from shared.palette import CLASSES, VISIBLE_GROUP  # noqa: E402
 
 def feedback(rows: list[str]) -> str:
     # PrairieLearn nests the grader's results.json under "results"
-    return json.dumps({"succeeded": True, "results": {"score": 1, "class_vote": {"workspace": "ws5", "grid": rows}}})
+    return json.dumps({"succeeded": True, "results": {"score": 1, "class_vote": {"workspace": "ws4", "grid": rows}}})
 
 
 def test_latest_submission_per_student_and_lookalikes_vote_together(tmp_path):

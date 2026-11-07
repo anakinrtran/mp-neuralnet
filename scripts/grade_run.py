@@ -3,7 +3,9 @@ saved weights (no retraining), decode the practice grid and score it against the
 
   python scripts/grade_run.py runs/ws1/20261101-190602 [more run dirs] [--image out.png]
 
-The workspace comes from MPNN_WORKSPACE (default ws1).
+The workspace comes from MPNN_WORKSPACE (default ws1). For workspaces graded on another grid
+(held-out or hidden), this scores only the practice grid and shows no pass/fail; use
+scripts/benchmark_ws45.py for the graded grid.
 
 Staff only: it reads the private practice labels. --image writes, for each run,
 decoded | answer | wrong pixels (red), scaled up.
@@ -37,7 +39,8 @@ def grade(run_dir: Path, labels: np.ndarray) -> dict:
         "layers": harness.describe_layers(model),
         "raw": float((pred == labels).mean()),
         "visible": visible,
-        "passed": visible >= harness.WORKSPACE.threshold,
+        # the threshold applies to the graded grid, which is the practice grid only in some workspaces
+        "passed": visible >= harness.WORKSPACE.threshold if harness.WORKSPACE.graded_grid == "practice" else None,
         # the image the student saw must be the one the grader scores
         "matches_decoded": bool(np.array_equal(np.load(saved), pred)) if saved.exists() else None,
         "pred": pred,
@@ -67,7 +70,7 @@ def main():
         r = grade(run_dir, labels)
         seconds = json.loads((run_dir / "summary.json").read_text()).get("seconds")
         print(f"{run_dir.name}  {' > '.join(r['layers']):<38} raw {r['raw']:.3f}  visible {r['visible']:.3f}  "
-              f"{'PASS' if r['passed'] else 'fail'}  run {seconds}s  matches decoded: {r['matches_decoded']}")
+              f"{'-' if r['passed'] is None else 'PASS' if r['passed'] else 'fail'}  run {seconds}s  matches decoded: {r['matches_decoded']}")
         rows.append(review_image(r["pred"], labels))
 
     if args.image:
