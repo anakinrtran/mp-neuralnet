@@ -1,4 +1,4 @@
-"""The five workspaces and their per-workspace settings.
+"""The workspaces (1-4 assigned, plus the unused old Workspace 4) and their per-workspace settings.
 
 One codebase and one pair of Docker images serve every workspace. The environment
 variable MPNN_WORKSPACE (set per question in info.json) picks which one is running.
@@ -103,11 +103,11 @@ WORKSPACES = {ws.id: ws for ws in [
         threads=0,
     ),
     Workspace(
-        id="ws4",
+        id="ws_unused",  # the old Workspace 4, folded into ws4; not assigned
         title="Generalization and evaluation",
-        question="ws4-generalization",
+        question="ws_unused-generalization",
         practice_image="workspace4_underwater.png",  # 64x64
-        # Graded on the held-out grid. Baselines (scripts/benchmark_ws45.py ws4: Conv 32 -> Linear 256, Adam
+        # Graded on the held-out grid. Baselines (scripts/benchmark_ws45.py ws_unused: Conv 32 -> Linear 256, Adam
         # 1e-3, 100 per class, 20 epochs, seeds 0-2; students get seed 0, listed first): start 85.9/86.2/84.8%,
         # MLP 512-512 84.4/84.1/85.8%, + weight decay 1e-3 86.2/85.8/85.0%, + early stopping 3
         # 84.6/85.1/83.3%, + flip 79.3/80.8/79.7%, + dropout 0.5 87.8/86.9/86.2%, + rotate+shift
@@ -125,12 +125,12 @@ WORKSPACES = {ws.id: ws for ws in [
         graded_image="workspace4_underwater.png",
     ),
     Workspace(
-        id="ws5",
+        id="ws4",
         title="Generalize and ship it",
-        question="ws5-ship-it",
-        practice_image="workspace4_underwater.png",  # Workspace 4's picture; WS4 itself is unused
-        # Workspace 4's content plus shipping; graded on the hidden 128x88 grid, which also does the held-out
-        # grid's job. Baselines (benchmark_ws45.py ws5, seed 0, 100 per class, 20 epochs; hidden / validation):
+        question="ws4-ship-it",
+        practice_image="workspace4_underwater.png",  # ws_unused's picture
+        # The old Workspace 4's content plus shipping; graded on the hidden 128x88 grid, which also does the held-out
+        # grid's job. Baselines (benchmark_ws45.py ws4, seed 0, 100 per class, 20 epochs; hidden / validation):
         # linear 75.8/76.0%, MLP 84.2/84.6%, start CNN 85.4/85.8%, + dropout 0.3/0.5/0.7 86.8/87.8/86.4%
         # (val 86.9/87.4/86.5%), + weight decay 1e-3 85.5%, + early stopping 5 85.2%, + rotate 87.8/88.9%,
         # + shift 90.9%, + rotate+shift 89.9/90.9%, + rotate+shift+mirror 79.0%, dropout + rotate+shift 40 epochs
@@ -140,7 +140,7 @@ WORKSPACES = {ws.id: ws for ws in [
         default_epochs=20,
         max_epochs=60,
         threads=0,
-        train_per_class=100,  # Workspace 4's small set, so regularization still matters
+        train_per_class=100,  # ws_unused's small set, so regularization still matters
         train_accuracy=True,
         graded_grid="hidden",
         graded_image="ws5_ClassImage_LARGE.png",  # shrunk by make_practice.py; never shown

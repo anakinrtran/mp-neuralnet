@@ -56,7 +56,7 @@ def practice_fingerprint(chars: np.ndarray) -> str:
 def used_indices(skip: str, graded_only: bool) -> np.ndarray:
     """Test-pool indices used by other saved grids. graded_only (for a practice grid): only other
     workspaces' graded grids; its own graded grid is rebuilt right after it, avoiding it."""
-    ws_id = skip.split("_")[-1]
+    ws_id = skip.split("_", 1)[1]  # "ws4.npz", "ws_unused.npz"
     files = [f for f in PRIVATE.glob("*_ws*.npz") if f.name != skip
              and (not graded_only or not (f.name.startswith("practice_") or f.name.endswith(ws_id)))]
     return np.concatenate([np.load(f)["idx"].ravel() for f in files] or [np.array([], int)])

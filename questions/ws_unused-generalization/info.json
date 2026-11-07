@@ -1,6 +1,6 @@
 {
-  "uuid": "10c0ee18-ed3d-4add-af06-c208a4c77960",
-  "title": "Workspace 5: Generalize and ship it",
+  "uuid": "3bb20edd-d62e-4626-b771-64d51911cec8",
+  "title": "Unused: Generalization and evaluation",
   "topic": "NeuralNet",
   "type": "v3",
   "singleVariant": true,
@@ -15,7 +15,7 @@
     ],
     "enableNetworking": false,
     "environment": {
-      "MPNN_WORKSPACE": "ws5"
+      "MPNN_WORKSPACE": "ws_unused"
     }
   },
   "gradingMethod": "External",
@@ -26,7 +26,7 @@
     "timeout": 60,
     "enableNetworking": false,
     "environment": {
-      "MPNN_WORKSPACE": "ws5"
+      "MPNN_WORKSPACE": "ws_unused"
     }
   }
 }

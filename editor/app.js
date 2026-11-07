@@ -670,7 +670,7 @@ function renderMistakes() {
   }
 }
 
-// ---------- your image (Workspace 5) ----------
+// ---------- your image (Workspace 4) ----------
 
 async function uploadImage(file) {
   if (!file) return;
@@ -707,7 +707,7 @@ async function uploadImage(file) {
   $("upload-download").hidden = false;
 }
 
-// ---------- model card (Workspace 5) ----------
+// ---------- model card (Workspace 4) ----------
 
 const LOOKALIKE_PAIRS = ["0O", "1I", "2Z", "8B", "6G", "5S"];
 const isLookalike = (a, b) => LOOKALIKE_PAIRS.some((pair) => pair.includes(a) && pair.includes(b));
@@ -742,7 +742,7 @@ function renderCard() {
   }
   view.innerHTML = `
     <h2>Model card: handwritten character reader</h2>
-    <p class="muted">Workspace 5, run ${runNumber(run.id)}, ${new Date(run.started * 1000).toLocaleDateString()}</p>
+    <p class="muted">Workspace 4, run ${runNumber(run.id)}, ${new Date(run.started * 1000).toLocaleDateString()}</p>
     <h3>What it does</h3>
     <p>Reads one handwritten character, a 28×28 grayscale image, and says which of 36 characters it is:
       a digit 0–9 or an uppercase letter A–Z.</p>

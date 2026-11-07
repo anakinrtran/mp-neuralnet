@@ -1,4 +1,4 @@
-"""Workspace 5's "Your image": encode any picture in handwritten characters, the same way the
+"""Workspace 4's "Your image": encode any picture in handwritten characters, the same way the
 course images are encoded, and decode it with the student's model.
 
 The picture is shrunk to at most 64 pixels on its long side, reduced to at most 30 colors and

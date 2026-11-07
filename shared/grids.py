@@ -33,7 +33,7 @@ def build_grid(groups: np.ndarray, pool_y: np.ndarray, seed: int,
     Returns an (H, W) array of indices into the character pool. `exclude` lists
     pool indices that must not be used (e.g. characters used by another grid).
     allow_reuse: a group without enough characters reuses some instead of failing
-    (Workspace 5's own images, encoded with the small validation set).
+    (Workspace 4's own images, encoded with the small validation set).
     """
     rng = np.random.default_rng(seed)
     available = np.ones(len(pool_y), dtype=bool)

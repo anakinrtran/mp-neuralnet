@@ -1,6 +1,6 @@
-"""The class vote on Workspace 5's hidden image (staff only: reads private labels and palette).
+"""The class vote on Workspace 4's hidden image (staff only: reads private labels and palette).
 
-Each graded Workspace 5 submission stores the student's predicted grid under "class_vote" in its
+Each graded Workspace 4 submission stores the student's predicted grid under "class_vote" in its
 feedback (grader/grade.py). PrairieLearn keeps the whole feedback with the submission, and the
 assessment's Downloads page exports it in the "Feedback" column of
 <assessment>_final_submissions.csv / _best_submissions.csv / _all_submissions.csv.
@@ -28,7 +28,7 @@ from shared import workspaces  # noqa: E402
 from shared.grids import upscale  # noqa: E402
 from shared.palette import CLASSES, VISIBLE_GROUP  # noqa: E402
 
-WS = workspaces.get("ws5")
+WS = workspaces.get("ws4")
 PRIVATE = REPO / "data" / "processed" / "private" / WS.graded_file
 
 
@@ -85,7 +85,7 @@ def main():
     labels, palette = private["y"], private["palette"]
     votes = read_votes(args.csv, labels.shape)
     if not votes:
-        raise SystemExit("No Workspace 5 submissions with predictions found in those files.")
+        raise SystemExit("No Workspace 4 submissions with predictions found in those files.")
     winner, agreement = majority(list(votes.values()))
     right = VISIBLE_GROUP[labels]
     students = sorted(float((VISIBLE_GROUP[g] == right).mean()) for g in votes.values())
