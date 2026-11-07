@@ -20,6 +20,7 @@ const weightsCache = new Map();
 let practiceGrid = null;
 let charsImage = null;
 let submission = null;
+let runInfo = {}; // the shown run's events that the Confusion, Worst mistakes and Model card tabs use
 
 async function api(path, options) {
   const res = await fetch(path, options);
@@ -98,6 +99,9 @@ function showTab(name) {
   if (name === "onestep") renderOneStep();
   if (name === "gradients") renderGradients();
   if (name === "compare") renderOverlay();
+  if (name === "confusion") renderConfusion();
+  if (name === "mistakes") renderMistakes();
+  if (name === "card") renderCard();
 }
 
 function markFresh(name) {
@@ -132,6 +136,11 @@ function setRunning(on) {
 function resetRunView() {
   charts.loss.points = [];
   charts.acc.points = [];
+  charts.acc.points2 = [];
+  runInfo = {};
+  $("acc-legend").hidden = true;
+  $("acc-title").textContent = "Validation accuracy";
+  $("stop-note").hidden = true;
   gradients = { names: [], xMax: 1, points: [] };
   $("loss-value").textContent = "";
   $("acc-value").textContent = "";
@@ -159,7 +168,14 @@ function watchRun(id, live) {
 
 function handleEvent(e, live) {
   switch (e.event) {
+    case "model":
+    case "settings":
+    case "data":
+    case "train_done":
+      runInfo[e.event] = e;
+      break;
     case "train_start":
+      runInfo.train_start = e;
       charts.loss.xMax = charts.acc.xMax = e.epochs;
       gradients = { names: e.weighted || [], xMax: e.epochs, perEpoch: e.steps_per_epoch, points: [] };
       $("train-progress").textContent = `Training: epoch 1 of ${e.epochs}…`;
@@ -174,7 +190,31 @@ function handleEvent(e, live) {
     case "val":
       charts.acc.points.push([e.progress, e.accuracy]);
       $("acc-value").textContent = pct(e.accuracy);
+      if (e.train_accuracy != null) {
+        charts.acc.points2.push([e.progress, e.train_accuracy]);
+        $("acc-legend").hidden = false;
+        $("acc-title").textContent = "Accuracy";
+        $("acc-value").textContent = `validation ${pct(e.accuracy)} · training ${pct(e.train_accuracy)}`;
+      }
       scheduleDraw();
+      break;
+    case "early_stop":
+      $("stop-note").hidden = false;
+      $("stop-note").textContent = `Early stopping: validation accuracy didn't improve for a while, so training ` +
+        `stopped after epoch ${e.epoch}. The model keeps its weights from epoch ${e.best_epoch} ` +
+        `(${pct(e.accuracy)} validation accuracy).`;
+      break;
+    case "best_weights":
+      if ($("stop-note").hidden) {
+        $("stop-note").hidden = false;
+        $("stop-note").textContent = `Early stopping never ran out of patience. The model keeps its weights ` +
+          `from its best epoch, ${e.epoch} (${pct(e.accuracy)} validation accuracy).`;
+      }
+      break;
+    case "confusion":
+    case "mistakes":
+      runInfo[e.event] = e;
+      if (live) markFresh(e.event);
       break;
     case "epoch":
       if (e.epoch < charts.acc.xMax) {
@@ -204,6 +244,9 @@ function handleEvent(e, live) {
 }
 
 function finishRun(status, live) {
+  for (const tab of ["confusion", "mistakes", "card"]) {
+    if (!$(`tab-${tab}`).hidden) showTab(tab);  // redraw with the run just shown
+  }
   const words = { done: "Finished", stopped: "Stopped", error: "Stopped with an error" };
   const secs = Math.round((Date.now() - runStarted) / 1000);
   $("train-progress").textContent = live ? `${words[status]} after ${secs}s.` : `${words[status]} (latest run).`;
@@ -212,6 +255,7 @@ function finishRun(status, live) {
     if (status !== "stopped") overlayRuns.add(shownRun);  // its curve joins the Compare runs overlay
     $("status").textContent = words[status];
     if (status === "done") {
+      markFresh("card");
       markFresh("compare");
       markFresh("weights");
       markFresh("filters");
@@ -230,19 +274,32 @@ setInterval(() => {
 
 const runNumber = (id) => history.findIndex((r) => r.id === id) + 1;
 
+/** The pass mark, as the Grade step states it before the first Save & Grade. */
+function passText() {
+  const mark = `${+(cfg.threshold * 100).toFixed(1)}%`;
+  if (cfg.graded_grid === "practice") {
+    return `To pass, at least <b>${mark}</b> of the practice image's pixels must come out right ` +
+      "(look-alikes such as 0/O count as right). Validation accuracy is a rough guide: the practice image " +
+      "usually lands within a couple of points of it. ";
+  }
+  const image = cfg.graded_grid === "hidden" ? "hidden class image" : "held-out image";
+  return `To pass, at least <b>${mark}</b> of the ${image}'s pixels must come out right. You can't see it, ` +
+    `so aim for about ${mark} validation accuracy: the ${image} usually lands within a couple of points of it. `;
+}
+
 async function refreshSubmission() {
   ({ submission } = await api("api/submission").catch(() => ({ submission: null })));
   const chip = $("graded");
   const note = $("submit-note");
   if (!submission) {
     chip.textContent = "";
-    if (note) note.textContent = "Finish a run first. Every finished run is saved for grading.";
+    if (note) note.innerHTML = passText() + "Finish a run first. Every finished run is saved for grading.";
     return;
   }
   const n = runNumber(submission.run_id);
   chip.textContent = `Save & Grade grades run ${n} · ${pct(submission.val_accuracy)}`;
   if (note) {
-    note.innerHTML = `<span class="ok">✓ Run ${n} is saved for grading ` +
+    note.innerHTML = passText() + `<span class="ok">✓ Run ${n} is saved for grading ` +
       `(${layersText(submission.layers)}, ${pct(submission.val_accuracy)} validation accuracy).</span> ` +
       "Go back to the PrairieLearn question page and click <b>Save &amp; Grade</b>. " +
       "Each new finished run replaces it.";
@@ -258,7 +315,7 @@ const pct = (v) => `${(v * 100).toFixed(1)}%`;
 
 const charts = {
   loss: { canvas: null, points: [], xMax: 1, hover: null, fmt: (v) => v.toFixed(2), yMax: null },
-  acc: { canvas: null, points: [], xMax: 1, hover: null, fmt: (v) => `${Math.round(v * 100)}%`, yMax: 1 },
+  acc: { canvas: null, points: [], points2: [], xMax: 1, hover: null, fmt: (v) => `${Math.round(v * 100)}%`, yMax: 1 },
 };
 
 let drawPending = false;
@@ -305,12 +362,23 @@ function drawChart(chart) {
   for (let e = 0; e <= chart.xMax; e += every) ctx.fillText(e, x(e), h - pad.b + 14);
   ctx.fillText("epochs", (pad.l + w - pad.r) / 2, h - 4);
 
-  if (points.length) {
-    ctx.strokeStyle = color("--chart-line");
+  if (chart.passMark) {
+    ctx.strokeStyle = color("--ink-muted");
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(pad.l, y(chart.passMark)); ctx.lineTo(w - pad.r, y(chart.passMark)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.textAlign = "left";
+    ctx.fillText("pass mark", pad.l + 4, y(chart.passMark) - 4);
+  }
+
+  // points2: a second line (training accuracy, Workspace 4 on), drawn under the first
+  for (const [line, name] of [[chart.points2 || [], "--chart-line-2"], [points, "--chart-line"]]) {
+    if (!line.length) continue;
+    ctx.strokeStyle = color(name);
     ctx.lineWidth = 2;
     ctx.lineJoin = "round";
     ctx.beginPath();
-    points.forEach(([px, py], i) => (i ? ctx.lineTo(x(px), y(py)) : ctx.moveTo(x(px), y(py))));
+    line.forEach(([px, py], i) => (i ? ctx.lineTo(x(px), y(py)) : ctx.moveTo(x(px), y(py))));
     ctx.stroke();
   }
 
@@ -325,7 +393,9 @@ function drawChart(chart) {
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(x(px), y(py), 4, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
     tip.hidden = false;
-    tip.textContent = `epoch ${px.toFixed(2)}: ${chart === charts.acc ? pct(py) : py.toFixed(3)}`;
+    const train = chart.points2?.[chart.hover];
+    tip.textContent = `epoch ${px.toFixed(2)}: ${chart === charts.acc ? pct(py) : py.toFixed(3)}` +
+      (train ? ` (training ${pct(train[1])})` : "");
     tip.style.left = `${Math.min(x(px) + 8, w - tip.offsetWidth)}px`;
     tip.style.top = `${y(py) + 4}px`;
   } else {
@@ -405,8 +475,9 @@ async function refreshHistory() {
 
 const LINE_COLORS = ["#2f6fd6", "#d65f2f", "#2f9a5a", "#9b4fc4", "#b5901f", "#c43f7a", "#3a9cb5", "#6b6b6b"];
 
-/** Draws lines [{ name, points: [[x, y], ...] }] on a canvas; y is log-scaled when `log`. */
-function drawLines(canvas, lines, { xMax, log = false, height = 160, xLabel = "epochs" }) {
+/** Draws lines [{ name, points: [[x, y], ...] }] on a canvas; y is log-scaled when `log`,
+ * and shown as 0-100% when `percent`. */
+function drawLines(canvas, lines, { xMax, log = false, percent = false, height = 160, xLabel = "epochs" }) {
   const css = getComputedStyle(document.documentElement);
   const color = (name) => css.getPropertyValue(name).trim();
   const dpr = window.devicePixelRatio || 1;
@@ -421,7 +492,7 @@ function drawLines(canvas, lines, { xMax, log = false, height = 160, xLabel = "e
   const ys = lines.flatMap((l) => l.points.map((p) => p[1])).filter((v) => v != null && Number.isFinite(v));
   // log: decades from 1e-6 (shown as "no change") up to the largest value
   const lo = log ? -6 : 0;
-  const hi = log ? Math.max(0, Math.ceil(Math.log10(Math.max(...ys, 1e-6)))) : Math.max(0.5, ...ys) * 1.1;
+  const hi = log ? Math.max(0, Math.ceil(Math.log10(Math.max(...ys, 1e-6)))) : percent ? 1 : Math.max(0.5, ...ys) * 1.1;
   const t = (v) => (log ? Math.log10(Math.max(v, 1e-6)) : v);
   const x = (v) => pad.l + (v / xMax) * (w - pad.l - pad.r);
   const y = (v) => pad.t + (1 - (t(v) - lo) / (hi - lo)) * (h - pad.t - pad.b);
@@ -435,7 +506,8 @@ function drawLines(canvas, lines, { xMax, log = false, height = 160, xLabel = "e
   for (const v of ticks) {
     ctx.beginPath(); ctx.moveTo(pad.l, y(v)); ctx.lineTo(w - pad.r, y(v)); ctx.stroke();
     ctx.textAlign = "right";
-    ctx.fillText(log ? (v <= 1e-6 ? "none" : String(v)) : v.toFixed(2), pad.l - 6, y(v) + 4);
+    ctx.fillText(log ? (v <= 1e-6 ? "none" : String(v)) : percent ? `${Math.round(v * 100)}%` : v.toFixed(2),
+      pad.l - 6, y(v) + 4);
   }
   ctx.textAlign = "center";
   const every = Math.ceil(xMax / 10);
@@ -496,13 +568,235 @@ async function renderOverlay() {
   const picked = history.filter((r) => overlayRuns.has(r.id) && r.status !== "running");
   $("overlay").hidden = picked.length === 0;
   if (!picked.length) return;
+  // Workspace 4 compares validation accuracy instead of the training loss
+  const kind = ws.COMPARE_CURVES === "val" ? "val" : "loss";
+  $("overlay-title").textContent = kind === "val" ? "Validation accuracy of the runs you tick below"
+    : "Training loss of the runs you tick below";
   for (const r of picked) {
-    if (!curveCache.has(r.id)) curveCache.set(r.id, await api(`api/runs/${r.id}/curve`).catch(() => []));
+    const key = `${r.id}:${kind}`;
+    if (!curveCache.has(key)) curveCache.set(key, await api(`api/runs/${r.id}/curve?kind=${kind}`).catch(() => []));
   }
-  const lines = picked.map((r) => ({ name: `Run ${runNumber(r.id)}`, points: curveCache.get(r.id) }));
+  const lines = picked.map((r) => ({ name: `Run ${runNumber(r.id)}`, points: curveCache.get(`${r.id}:${kind}`) }));
   const xMax = Math.max(1, ...picked.map((r) => r.epochs || 1));
-  drawLines($("overlay-chart"), lines, { xMax });
+  drawLines($("overlay-chart"), lines, { xMax, percent: kind === "val" });
   lineLegend($("overlay-legend"), picked.map((r) => `Run ${runNumber(r.id)}: ${r.settings ?? layersText(r.layers)}`));
+}
+
+// ---------- confusion matrix and worst mistakes (Workspace 4 on) ----------
+
+const LABEL_SPACE = 14;
+let confusionCell = 10;  // cell size in the tab, fitted to the panel's height
+
+function renderConfusion() {
+  const data = runInfo.confusion;
+  $("confusion-view").hidden = !data;
+  $("confusion-note").innerHTML = data
+    ? `Run ${runNumber(shownRun) || history.length}: what your model guessed for each validation character.`
+    : "Add <b>Confusion matrix</b> (in Evaluation) to the end of your program and run it.";
+  if (!data) return;
+  const panel = $("tab-confusion");
+  const room = panel.clientHeight - $("confusion-note").offsetHeight - 40 - LABEL_SPACE;
+  confusionCell = room > 0 ? Math.max(7, Math.min(12, Math.floor(room / cfg.num_classes))) : 10;
+  drawConfusion($("confusion-canvas"), data.matrix, confusionCell);
+}
+
+function drawConfusion(canvas, matrix, CELL = 10) {
+  const n = cfg.num_classes;
+  const size = LABEL_SPACE + n * CELL;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = canvas.height = size * dpr;
+  canvas.style.width = canvas.style.height = `${size}px`;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  ctx.font = `${Math.min(9, CELL)}px system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#5f6b7a";
+  for (let i = 0; i < n; i++) {
+    ctx.fillText(cfg.classes[i], LABEL_SPACE + i * CELL + CELL / 2, 11);  // guessed (columns)
+    ctx.fillText(cfg.classes[i], LABEL_SPACE / 2, LABEL_SPACE + i * CELL + CELL / 2 + 3);  // true (rows)
+  }
+  matrix.forEach((row, t) => {
+    const total = row.reduce((a, b) => a + b, 0) || 1;
+    row.forEach((count, g) => {
+      // square root, so a few mix-ups still show
+      const k = Math.sqrt(count / total);
+      const [r, gr, b] = t === g ? [47, 154, 90] : [214, 48, 49];
+      ctx.fillStyle = `rgb(${255 + (r - 255) * k}, ${255 + (gr - 255) * k}, ${255 + (b - 255) * k})`;
+      ctx.fillRect(LABEL_SPACE + g * CELL, LABEL_SPACE + t * CELL, CELL - 1, CELL - 1);
+    });
+  });
+}
+
+let confusionTip;
+
+function hoverConfusion(ev) {
+  const data = runInfo.confusion;
+  if (!confusionTip) {
+    confusionTip = document.createElement("div");
+    confusionTip.className = "tooltip";
+    $("confusion-view").appendChild(confusionTip);
+  }
+  const g = Math.floor((ev.offsetX - LABEL_SPACE) / confusionCell);
+  const t = Math.floor((ev.offsetY - LABEL_SPACE) / confusionCell);
+  confusionTip.hidden = !data || g < 0 || t < 0 || g >= cfg.num_classes || t >= cfg.num_classes;
+  if (confusionTip.hidden) return;
+  const count = data.matrix[t][g];
+  const [tc, gc] = [cfg.classes[t], cfg.classes[g]];
+  confusionTip.innerHTML = t === g
+    ? `<b>${tc}</b> read as ${tc}: <b>${count}</b> of 100 right`
+    : `<b>${tc}</b> read as <b>${gc}</b>: ${count} time${count === 1 ? "" : "s"}`;
+  confusionTip.style.left = `${ev.offsetX + 12}px`;
+  confusionTip.style.top = `${ev.offsetY + 12}px`;
+}
+
+function renderMistakes() {
+  const data = runInfo.mistakes;
+  const grid = $("mistakes-grid");
+  grid.innerHTML = "";
+  if (!data) {
+    $("mistakes-note").innerHTML = "Add <b>Worst mistakes</b> (in Evaluation) to the end of your program and run it.";
+    return;
+  }
+  $("mistakes-note").textContent = `Run ${runNumber(shownRun) || history.length}: ${data.count} of ` +
+    `${data.total} validation characters read wrong (look-alike mix-ups such as 0/O not counted). ` +
+    "These are the ones your model was most sure about. Would you have read them right?";
+  for (const m of data.items) {
+    const fig = document.createElement("figure");
+    fig.appendChild(grayCanvas(m.image));
+    const cap = document.createElement("figcaption");
+    cap.innerHTML = `is <b>${m.label}</b><br>read <b>${m.guess}</b> · ${pct(m.confidence)}`;
+    fig.appendChild(cap);
+    grid.appendChild(fig);
+  }
+}
+
+// ---------- your image (Workspace 5) ----------
+
+async function uploadImage(file) {
+  if (!file) return;
+  $("upload-note").textContent = "Encoding your picture and decoding it with your model…";
+  $("upload-view").hidden = true;
+  $("upload-download").hidden = true;
+  let r;
+  try {
+    r = await api("api/upload", { method: "POST", body: file });
+  } catch (e) {
+    $("upload-note").textContent = e.message;
+    return;
+  }
+  const [w, h] = r.size;
+  const fig = (src, text, cls = "") => `<figure><img class="${cls}" src="${src}" alt=""><figcaption>${text}</figcaption></figure>`;
+  $("upload-note").textContent = `Decoded with your model from run ${runNumber(r.run_id)}.`;
+  $("upload-view").innerHTML =
+    fig(r.images.original, "1. Your picture") +
+    fig(r.images.small, `2. Shrunk to ${w}×${h} pixels`, "pixels") +
+    fig(r.images.palette, `3. Reduced to ${r.colors} colors` +
+      (r.colors_before > r.colors ? ` (from ${r.colors_before.toLocaleString("en-US")})` : "") +
+      ", each one a color group", "pixels") +
+    fig(r.images.characters, `4. Written in ${(w * h).toLocaleString("en-US")} handwritten characters: ` +
+      "each pixel is a character from its color's group", "chars") +
+    fig(r.images.decoded, `5. What your model read: ${pct(r.accuracy)} of pixels right`, "pixels") +
+    (r.reused.length
+      ? `<p class="note">Some characters appear more than once: there are only 100 of each character here ` +
+        `(200 for look-alike pairs), and ${r.reused.length} of your colors cover more pixels than that. ` +
+        "A repeated character is read the same way every time, so its mistakes " +
+        "repeat too.</p>"
+      : "");
+  $("upload-view").hidden = false;
+  $("upload-download").href = r.images.side_by_side;
+  $("upload-download").hidden = false;
+}
+
+// ---------- model card (Workspace 5) ----------
+
+const LOOKALIKE_PAIRS = ["0O", "1I", "2Z", "8B", "6G", "5S"];
+const isLookalike = (a, b) => LOOKALIKE_PAIRS.some((pair) => pair.includes(a) && pair.includes(b));
+
+function renderCard() {
+  const run = history.find((r) => r.id === shownRun);
+  const view = $("card-view");
+  if (!run || run.status !== "done" || !runInfo.model) {
+    view.hidden = true;
+    $("card-download").hidden = true;
+    $("card-note").textContent = "The model card describes your latest finished run. Run your model to the end, " +
+      "then come back.";
+    return;
+  }
+  const n = (v) => v.toLocaleString("en-US");
+  const { model, settings, train_start: start, data, confusion } = runInfo;
+  const val = charts.acc.points.at(-1)?.[1];
+  const stop = $("stop-note").hidden ? "" : ` ${$("stop-note").textContent}`;
+  let weak = "<p>Add <b>Confusion matrix</b> to your program to list them.</p>";
+  if (confusion) {
+    const cells = [];
+    confusion.matrix.forEach((row, t) => row.forEach((c, g) => { if (t !== g && c) cells.push([c, t, g]); }));
+    cells.sort((a, b) => b[0] - a[0]);
+    const right = confusion.matrix.map((row, t) => [row[t], t]).sort((a, b) => a[0] - b[0]).slice(0, 5);
+    const look = cells.filter(([, t, g]) => isLookalike(cfg.classes[t], cfg.classes[g]));
+    const mixup = ([c, t, g]) => `<b>${cfg.classes[t]}</b> as <b>${cfg.classes[g]}</b> ${c} times out of 100`;
+    weak = "<ul>" + cells.filter((cell) => !look.includes(cell)).slice(0, 5)
+      .map((cell) => `<li>Reads ${mixup(cell)}</li>`).join("") + "</ul>" +
+      (look.length ? `<p>Look-alike pairs, which share a color in the decoded image: reads ` +
+        `${look.slice(0, 3).map(mixup).join("; ")}.</p>` : "") +
+      `<p>Hardest characters: ${right.map(([c, t]) => `<b>${cfg.classes[t]}</b> (${c}% right)`).join(", ")}.</p>`;
+  }
+  view.innerHTML = `
+    <h2>Model card: handwritten character reader</h2>
+    <p class="muted">Workspace 5, run ${runNumber(run.id)}, ${new Date(run.started * 1000).toLocaleDateString()}</p>
+    <h3>What it does</h3>
+    <p>Reads one handwritten character, a 28×28 grayscale image, and says which of 36 characters it is:
+      a digit 0–9 or an uppercase letter A–Z.</p>
+    <h3>Model</h3>
+    <p>${model.layers.join(" → ")}</p>
+    <p>${n(start.parameters)} weights.</p>
+    <h3>Training</h3>
+    <p>${n(data.train)} handwritten characters from EMNIST, the same number of each class.
+      ${settings ? `${settings.text}.` : ""} ${start.epochs} epochs${runInfo.train_done ? `, ${Math.round(runInfo.train_done.seconds)}s to train` : ""}.${stop}</p>
+    <h3>How well it does</h3>
+    <p>Validation accuracy: <b>${val != null ? pct(val) : "—"}</b> on ${n(data.val)} characters it never trained on
+      (100 of each class). Mixing up look-alikes such as 0/O counts as right here, as in grading.</p>
+    <figure class="chart"><figcaption>Training loss</figcaption><canvas id="card-loss"></canvas></figure>
+    <figure class="chart"><figcaption>Accuracy (blue: validation, orange: training)</figcaption><canvas id="card-acc"></canvas></figure>
+    <h3>Confusion matrix</h3>
+    ${confusion ? '<canvas id="card-confusion"></canvas>' : "<p>Not measured in this run.</p>"}
+    <h3>Known weaknesses</h3>
+    <p>Its most common mix-ups on the validation characters:</p>
+    ${weak}
+    <h3>Limits</h3>
+    <ul>
+      <li>It only knows digits and uppercase letters. Anything else (a lowercase letter, a symbol, a drawing)
+        still gets one of the 36 answers.</li>
+      <li>It was trained and tested on EMNIST: centered characters, light ink on a dark background, scanned
+        from forms. Other handwriting, cameras or line widths may do worse.</li>
+      <li>Some characters look the same in many people's handwriting (0/O, 1/I, 2/Z, 5/S, 6/G, 8/B): no model
+        can always tell them apart from the character alone.</li>
+    </ul>`;
+  view.hidden = false;
+  $("card-download").hidden = false;
+  $("card-note").textContent = "Generated from your latest finished run. Run again and it updates.";
+  drawLines($("card-loss"), [{ points: charts.loss.points }], { xMax: charts.loss.xMax });
+  drawLines($("card-acc"), [{ points: charts.acc.points }, { points: charts.acc.points2 }],
+    { xMax: charts.acc.xMax, percent: true });
+  if (confusion) drawConfusion($("card-confusion"), confusion.matrix);
+}
+
+function downloadCard() {
+  const copy = $("card-view").cloneNode(true);
+  for (const c of copy.querySelectorAll("canvas")) {
+    const img = document.createElement("img");
+    img.src = $(c.id).toDataURL("image/png");
+    img.style.width = $(c.id).style.width || "100%";
+    c.replaceWith(img);
+  }
+  const html = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Model card</title>" +
+    "<style>body{font:15px/1.5 system-ui,sans-serif;max-width:720px;margin:24px auto;padding:0 16px;color:#1d232b}" +
+    ".muted{color:#5f6b7a}img{max-width:100%}figure{margin:0 0 12px}figcaption{font-weight:600}</style>" +
+    `</head><body>${copy.innerHTML}</body></html>`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  a.download = "model-card.html";
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 // ---------- weights ----------
@@ -822,9 +1116,10 @@ function setUpPage() {
 
 async function main() {
   cfg = await api("api/config");
+  charts.acc.passMark = cfg.threshold;
   ws = await import(`./workspaces/${cfg.workspace}.js`);
   setUpPage();
-  defineBlocks(cfg);
+  defineBlocks(cfg, ws.BLOCK_OPTIONS);
   workspace = Blockly.inject("blockly", {
     toolbox: ws.TOOLBOX,
     renderer: "zelos",
@@ -870,6 +1165,10 @@ async function main() {
     }
   };
   $("practice-canvas").addEventListener("mousemove", hoverPractice);
+  $("confusion-canvas").addEventListener("mousemove", hoverConfusion);
+  $("confusion-canvas").addEventListener("mouseleave", () => { if (confusionTip) confusionTip.hidden = true; });
+  $("upload-file").addEventListener("change", (ev) => uploadImage(ev.target.files[0]));
+  $("card-download").onclick = downloadCard;
   $("filters-slider").addEventListener("input", drawSnapshot);
   $("onestep-next").onclick = () => {
     oneStep.stage++;

@@ -1,0 +1,26 @@
+<pl-question-panel>
+  <p>
+    A model is only useful on characters it has never seen. In this workspace your model trains on a
+    small training set, 100 characters per class, and a big model will memorize it. You'll watch it
+    overfit, try dropout, weight decay, data augmentation and early stopping, and look past accuracy
+    with a confusion matrix and the model's worst mistakes.
+  </p>
+  <ol>
+    <li>Click <b>Open workspace</b> below. The workspace opens in a new tab.</li>
+    <li>Follow the <b>Steps</b> tab in the workspace.
+      Forgot what a block does? Hold your mouse over it for a short reminder.</li>
+    <li>Come back to this page and click <b>Save &amp; Grade</b>. It grades your latest finished run.</li>
+  </ol>
+  <p>
+    Grading uses a <b>held-out test image</b>: the practice picture written again with handwritten
+    characters that are nowhere in your workspace, so you can't tune your model on them. To pass, your
+    model must color at least <b>88%</b> of its pixels correctly, trained on at most 100 characters per class.
+    Mixing up look-alike characters (0/O, 1/I, 2/Z, 5/S, 6/G, 8/B) doesn't count against you, and the workspace's validation accuracy
+    counts them the same way. Your feedback will show the decoded held-out image next to the original.
+  </p>
+  <pl-workspace></pl-workspace>
+</pl-question-panel>
+
+<pl-submission-panel>
+  <pl-external-grader-results></pl-external-grader-results>
+</pl-submission-panel>

@@ -1,0 +1,32 @@
+{
+  "uuid": "3bb20edd-d62e-4626-b771-64d51911cec8",
+  "title": "Workspace 4: Generalization and evaluation",
+  "topic": "NeuralNet",
+  "type": "v3",
+  "singleVariant": true,
+  "workspaceOptions": {
+    "image": "anakintran/cs124h-mp-neuralnet:workspace-fa26",
+    "port": 8080,
+    "home": "/home/student",
+    "rewriteUrl": true,
+    "gradedFiles": [
+      "model.*",
+      "submission.*"
+    ],
+    "enableNetworking": false,
+    "environment": {
+      "MPNN_WORKSPACE": "ws4"
+    }
+  },
+  "gradingMethod": "External",
+  "externalGradingOptions": {
+    "enabled": true,
+    "image": "anakintran/cs124h-mp-neuralnet:grader-fa26",
+    "entrypoint": "python /opt/mpnn/grader/grade.py",
+    "timeout": 60,
+    "enableNetworking": false,
+    "environment": {
+      "MPNN_WORKSPACE": "ws4"
+    }
+  }
+}

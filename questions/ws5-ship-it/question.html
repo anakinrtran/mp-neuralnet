@@ -1,0 +1,25 @@
+<pl-question-panel>
+  <p>
+    Time to ship. Build the best network you can from everything in Workspaces 1–4 and train it on
+    Workspace 4's small training set. Then try it on a picture of your own, read its model card, and decode the hidden
+    class image.
+  </p>
+  <ol>
+    <li>Click <b>Open workspace</b> below. The workspace opens in a new tab.</li>
+    <li>Follow the <b>Steps</b> tab in the workspace.</li>
+    <li>Come back to this page and click <b>Save &amp; Grade</b>. It decodes the hidden class image with
+      your latest finished run.</li>
+  </ol>
+  <p>
+    Your feedback shows only your accuracy on the hidden image, never the image itself. To pass, your
+    model must color at least <b>88%</b> of its pixels correctly. Your predictions are also saved for the class vote:
+    every pixel takes the color most of the class agrees on, and the combined image is revealed at the
+    end of the course. Mixing up look-alike characters (0/O, 1/I, 2/Z, 5/S, 6/G, 8/B) doesn't count
+    against you, and the workspace's validation accuracy counts them the same way.
+  </p>
+  <pl-workspace></pl-workspace>
+</pl-question-panel>
+
+<pl-submission-panel>
+  <pl-external-grader-results></pl-external-grader-results>
+</pl-submission-panel>

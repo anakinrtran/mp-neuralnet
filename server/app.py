@@ -8,6 +8,7 @@ API
   GET  /api/runs                      run history
   POST /api/runs        {code}        start a run (409 if one is already running)
   GET  /api/runs/{id}/events          progress as Server-Sent Events (replays from the start)
+  GET  /api/runs/{id}/curve?kind=     training loss ("loss") or validation accuracy ("val") points
   POST /api/runs/{id}/stop            stop a run
   GET  /api/runs/{id}/weights?kind=   first-layer weights ("templates" or "features")
   GET  /api/runs/{id}/timelapse       first Conv layer's filters and outputs during training
@@ -17,6 +18,7 @@ API
   GET  /api/blocks                    saved blocks (null if none yet)
   PUT  /api/blocks      {blocks}      save blocks
   GET  /api/submission                the run Save & Grade will grade (null if none)
+  POST /api/upload      (image bytes)  Workspace 5: encode a picture and decode it with the latest finished run
 
 Environment
   MPNN_WORKSPACE  which workspace this is: ws1, ws2, ... (default ws1)
@@ -34,7 +36,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
@@ -45,8 +47,9 @@ sys.path.insert(0, str(REPO))
 
 from server.onestep import one_step  # noqa: E402
 from server.runs import RunManager  # noqa: E402
+from server.upload import encode_and_decode  # noqa: E402
 from server.weights import WeightsUnavailable, first_layer_units, timelapse  # noqa: E402
-from shared import config  # noqa: E402
+from shared import config, harness  # noqa: E402
 from shared.grids import mosaic  # noqa: E402
 from shared.harness import DATA_DIR, WORKSPACE  # noqa: E402
 from shared.palette import CLASSES, load_palette, rgb_to_hex  # noqa: E402
@@ -89,7 +92,14 @@ def get_config():
         "batch_sizes": config.BATCH_SIZES,
         "batch_default": config.BATCH_SIZE,
         # shortcut: ignores MPNN_TRAIN_PER_CLASS (dev only), which would make scheduler lengths off
-        "train_size": config.TRAIN_PER_CLASS * config.NUM_CLASSES,
+        "train_size": WORKSPACE.train_per_class * config.NUM_CLASSES,
+        # Workspace 4's training-set size field on Load data (characters per class)
+        "train_per_class": {"default": WORKSPACE.train_per_class, "min": harness.MIN_TRAIN_PER_CLASS,
+                            "max": WORKSPACE.train_per_class},
+        "max_patience": harness.MAX_PATIENCE,
+        # the pass mark, shown up front; graded_grid says which image it applies to
+        "threshold": WORKSPACE.threshold,
+        "graded_grid": WORKSPACE.graded_grid,
     }
 
 
@@ -126,9 +136,13 @@ async def run_events(run_id: str):
 
 
 @app.get("/api/runs/{run_id}/curve")
-def run_curve(run_id: str):
-    """The run's training loss as [epoch progress, loss] points, for overlaying runs."""
-    return [[e["progress"], e["loss"]] for e in get_run(run_id).events if e["event"] == "step"]
+def run_curve(run_id: str, kind: str = "loss"):
+    """The run's training loss ("loss") or validation accuracy ("val") as [epoch progress, value]
+    points, for overlaying runs."""
+    event, key = {"loss": ("step", "loss"), "val": ("val", "accuracy")}.get(kind, (None, None))
+    if event is None:
+        raise HTTPException(400, "kind must be 'loss' or 'val'.")
+    return [[e["progress"], e[key]] for e in get_run(run_id).events if e["event"] == event]
 
 
 @app.post("/api/runs/{run_id}/stop")
@@ -205,6 +219,20 @@ def put_blocks(req: BlocksRequest):
 def get_submission():
     path = SUBMIT_DIR / "submission.json"
     return {"submission": json.loads(path.read_text()) if path.exists() else None}
+
+
+@app.post("/api/upload")
+async def upload_image(request: Request):
+    run = next((r for r in reversed(manager.history()) if r["status"] == "done"), None)
+    if run is None:
+        raise HTTPException(400, "Finish a run first: your latest finished model decodes your picture.")
+    data = await request.body()
+    try:
+        # model inference and image work: off the event loop, so runs keep streaming
+        result = await asyncio.to_thread(encode_and_decode, data, manager.runs[run["id"]].dir)
+    except (ValueError, harness.StudentError) as e:
+        raise HTTPException(400, str(e)) from e
+    return {**result, "run_id": run["id"]}
 
 
 class EditorFiles(StaticFiles):

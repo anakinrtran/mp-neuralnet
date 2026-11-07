@@ -28,14 +28,30 @@ export function categoryToolbox(blocksByStage) {
   };
 }
 
-export function defineBlocks(cfg) {
+/**
+ * Define every block. `options` come from the workspace module (BLOCK_OPTIONS): fields that
+ * only some workspaces have, so earlier workspaces' blocks and code stay unchanged.
+ *   trainSize: Load data gets a training-set size field (characters per class)
+ *   weightDecay: Optimizer gets a weight decay field
+ */
+export function defineBlocks(cfg, options = {}) {
   if (!Blockly.Extensions.isRegistered("default_batch")) {
     Blockly.Extensions.register("default_batch", function () {
       this.setFieldValue(String(cfg.batch_default), "BATCH");
     });
   }
   Blockly.common.defineBlocksWithJsonArray([
-    {
+    options.trainSize ? {
+      type: "load_data",
+      message0: "Load data  (handwritten 0–9, A–Z)  %1 training characters per class",
+      args0: [{ type: "field_number", name: "PER_CLASS", value: cfg.train_per_class.default,
+                min: cfg.train_per_class.min, max: cfg.train_per_class.max, precision: 1 }],
+      nextStatement: "Step",
+      colour: CATEGORY_COLORS.data,
+      tooltip: `Loads the training and validation images. Every program starts here. The training ` +
+               `set here is small: ${cfg.train_per_class.min}–${cfg.train_per_class.max} characters per ` +
+               "class. The validation set is always the same 100 per class.",
+    } : {
       type: "load_data",
       message0: "Load data  (handwritten 0–9, A–Z)",
       nextStatement: "Step",
@@ -123,17 +139,56 @@ export function defineBlocks(cfg) {
     },
     {
       type: "optimizer",
-      message0: "Optimizer  %1  learning rate %2",
+      message0: "Optimizer  %1  learning rate %2" + (options.weightDecay ? "  weight decay %3" : ""),
       args0: [
         { type: "field_dropdown", name: "KIND",
           options: [["SGD", "sgd"], ["SGD + momentum", "momentum"], ["Adam", "adam"]] },
         { type: "field_number", name: "LR", value: 0.01, min: 0.00001, max: 100 },
+        ...(options.weightDecay ? [{ type: "field_number", name: "WD", value: 0, min: 0, max: 1 }] : []),
       ],
       previousStatement: "Step",
       nextStatement: "Step",
       colour: CATEGORY_COLORS.training,
       tooltip: "How the model nudges its weights after each group of characters. The learning " +
-               "rate is the size of each nudge.",
+               "rate is the size of each nudge." +
+               (options.weightDecay ? " Weight decay also pulls every weight a little toward 0 at each " +
+                 "step, so only weights that keep helping stay large. 0 turns it off; try 0.0001 to 0.01." : ""),
+    },
+    {
+      type: "dropout",
+      message0: "Dropout  %1",
+      args0: [{ type: "field_number", name: "P", value: 0.5, min: 0.05, max: 0.9 }],
+      previousStatement: "Layer",
+      nextStatement: "Layer",
+      colour: CATEGORY_COLORS.model,
+      tooltip: "While training, switches off each unit coming out of the layer above with this " +
+               "chance (0.5 = half of them), a different random set each time. Nothing is switched " +
+               "off when the model is evaluated.",
+    },
+    {
+      type: "augment",
+      message0: "Augment training images  rotate %1  shift %2  mirror left↔right %3",
+      args0: [
+        { type: "field_checkbox", name: "ROTATE", checked: true },
+        { type: "field_checkbox", name: "SHIFT", checked: false },
+        { type: "field_checkbox", name: "FLIP", checked: false },
+      ],
+      previousStatement: "Step",
+      nextStatement: "Step",
+      colour: CATEGORY_COLORS.training,
+      tooltip: "Makes random changes to every training character each time the model sees it: " +
+               "rotate by up to 15°, shift by up to 3 pixels, mirror left to right (half the time). " +
+               "Validation characters are never changed.",
+    },
+    {
+      type: "early_stopping",
+      message0: "Early stopping  patience %1 epochs",
+      args0: [{ type: "field_number", name: "PATIENCE", value: 5, min: 1, max: cfg.max_patience, precision: 1 }],
+      previousStatement: "Step",
+      nextStatement: "Step",
+      colour: CATEGORY_COLORS.training,
+      tooltip: "Stops training once validation accuracy hasn't improved for this many epochs in a " +
+               "row, and keeps the weights from the best epoch.",
     },
     {
       type: "scheduler",
@@ -178,6 +233,22 @@ export function defineBlocks(cfg) {
       nextStatement: "Step",
       colour: CATEGORY_COLORS.evaluation,
       tooltip: "Measures accuracy on images the model never trained on.",
+    },
+    {
+      type: "confusion_matrix",
+      message0: "Confusion matrix  on validation images",
+      previousStatement: "Step",
+      nextStatement: "Step",
+      colour: CATEGORY_COLORS.evaluation,
+      tooltip: "Counts, for each true character, what the model guessed. Opens in the Confusion matrix tab.",
+    },
+    {
+      type: "worst_mistakes",
+      message0: "Worst mistakes  on validation images",
+      previousStatement: "Step",
+      nextStatement: "Step",
+      colour: CATEGORY_COLORS.evaluation,
+      tooltip: "Finds the wrong guesses the model was most sure about. Opens in the Worst mistakes tab.",
     },
     {
       type: "decode_practice",

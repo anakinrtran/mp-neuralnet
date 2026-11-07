@@ -3,7 +3,7 @@
   "name": "MPNN-DEV",
   "title": "MP NeuralNet local test course",
   "timezone": "America/Chicago",
-  "topics": [{ "name": "Neural networks", "color": "blue1", "description": "MP NeuralNet workspaces" }],
+  "topics": [{ "name": "NeuralNet", "color": "blue1", "description": "MP NeuralNet workspaces" }],
   "tags": [
     { "name": "mp-neuralnet", "color": "purple1", "description": "MP NeuralNet" },
     { "name": "workspace", "color": "gray1", "description": "Uses a workspace" }

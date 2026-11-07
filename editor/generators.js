@@ -13,10 +13,20 @@ generator.scrub_ = function (block, code, thisOnly) {
 const HEADER =
   "from torch import nn\n" +
   "from harness import load_data, train, evaluate, decode_practice\n\n";
+// harness functions imported only when the program uses them (Workspace 4 on)
+const EXTRA_IMPORTS = ["confusion_matrix", "worst_mistakes"];
 
-generator.forBlock.load_data = () =>
+generator.forBlock.load_data = (block) =>
   "# Load the handwritten character images\n" +
-  "train_data, val_data = load_data()\n\n";
+  (block.getField("PER_CLASS")
+    ? `train_data, val_data = load_data(train_per_class=${block.getFieldValue("PER_CLASS")})\n\n`
+    : "train_data, val_data = load_data()\n\n");
+
+/** Training characters, from Load data's size field if it has one. */
+function trainSize(workspace, cfg) {
+  const load = workspace.getBlocksByType("load_data", false)[0];
+  return load?.getField("PER_CLASS") ? load.getFieldValue("PER_CLASS") * cfg.num_classes : cfg.train_size;
+}
 
 generator.forBlock.model = (block) =>
   "model = nn.Sequential(\n" + generator.statementToCode(block, "LAYERS") + ")\n\n";
@@ -48,6 +58,13 @@ generator.forBlock.linear = (block) => {
 
 generator.forBlock.relu = () => "nn.ReLU(),\n";
 
+generator.forBlock.dropout = (block) => {
+  const p = block.getFieldValue("P");
+  const comment = generator.firstDropout ? `  # while training, switch off each unit with chance ${p}` : "";
+  generator.firstDropout = false;
+  return `nn.Dropout(${p}),${comment}\n`;
+};
+
 generator.forBlock.batchnorm = (block) => {
   // BatchNorm2d works on images (before Flatten), BatchNorm1d on lists (after it)
   let flat = false;
@@ -65,15 +82,19 @@ const OPTIMIZERS = {
   adam: (lr) => `optim.Adam(model.parameters(), lr=${lr})`,
 };
 
-generator.forBlock.optimizer = (block) =>
-  `optimizer = ${OPTIMIZERS[block.getFieldValue("KIND")](block.getFieldValue("LR"))}\n`;
+generator.forBlock.optimizer = (block) => {
+  const code = OPTIMIZERS[block.getFieldValue("KIND")](block.getFieldValue("LR"));
+  // Workspace 4's weight decay field; 0 (or no field) leaves the code as in Workspace 3
+  const decay = block.getField("WD") ? block.getFieldValue("WD") : 0;
+  return `optimizer = ${decay ? code.replace(/\)$/, `, weight_decay=${decay})`) : code}\n`;
+};
 
 generator.forBlock.scheduler = (block) => {
   // the harness steps the scheduler after every batch, so its length is counted in steps
   const train = block.workspace.getBlocksByType("train_settings", false)[0];
   const epochs = train ? train.getFieldValue("EPOCHS") : 1;
   const batch = Number(train ? train.getFieldValue("BATCH") : generator.cfg.batch_default);
-  const perEpoch = Math.ceil(generator.cfg.train_size / batch);
+  const perEpoch = Math.ceil(trainSize(block.workspace, generator.cfg) / batch);
   const n = (v) => v.toLocaleString("en-US");
   return block.getFieldValue("KIND") === "step"
     ? `scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=${perEpoch}, gamma=0.1)` +
@@ -87,18 +108,36 @@ generator.forBlock.loss = (block) =>
     ? "loss_fn = nn.MSELoss()  # compares the probabilities with the right answer\n\n"
     : "loss_fn = nn.CrossEntropyLoss()\n\n";
 
+/** Augment's choices, as the harness names them. */
+function augmentations(block) {
+  return [["ROTATE", "rotate"], ["SHIFT", "shift"], ["FLIP", "flip"]]
+    .filter(([field]) => block.getFieldValue(field) === "TRUE").map(([, name]) => `"${name}"`);
+}
+
+// Augment and Early stopping only add arguments to train() (below)
+generator.forBlock.augment = () => "";
+generator.forBlock.early_stopping = () => "";
+
 generator.forBlock.train_settings = (block) => {
-  const has = (type) => block.workspace.getBlocksByType(type, false).length > 0;
-  const extra = ["optimizer=optimizer", "loss_fn=loss_fn", has("scheduler") && "scheduler=scheduler"]
+  const find = (type) => block.workspace.getBlocksByType(type, false).find((b) => b.isEnabled());
+  const extra = ["optimizer=optimizer", "loss_fn=loss_fn", find("scheduler") && "scheduler=scheduler"]
     .filter(Boolean).join(", ");
+  const augment = find("augment") ? augmentations(find("augment")) : [];
+  const stop = find("early_stopping");
+  const more = [augment.length && `augment=[${augment.join(", ")}]`,
+    stop && `early_stopping=${stop.getFieldValue("PATIENCE")}`].filter(Boolean).join(", ");
   return `train(model, train_data, val_data, epochs=${block.getFieldValue("EPOCHS")}, ` +
-    `batch_size=${block.getFieldValue("BATCH")},\n      ${extra})\n`;
+    `batch_size=${block.getFieldValue("BATCH")},\n      ${extra}${more ? `,\n      ${more}` : ""})\n`;
 };
 
 generator.forBlock.train = (block) =>
   `train(model, train_data, val_data, epochs=${block.getFieldValue("EPOCHS")})\n`;
 
 generator.forBlock.evaluate = () => "evaluate(model, val_data)\n";
+
+generator.forBlock.confusion_matrix = () => "confusion_matrix(model, val_data)\n";
+
+generator.forBlock.worst_mistakes = () => "worst_mistakes(model, val_data)\n";
 
 generator.forBlock.decode_practice = () => "decode_practice(model)\n";
 
@@ -116,8 +155,11 @@ export function generateCode(workspace, cfg) {
   generator.firstConv = true;
   generator.firstPool = true;
   generator.firstNorm = true;
+  generator.firstDropout = true;
   const body = generator.blockToCode(start).trimEnd() + "\n";
-  const header = /\boptim\./.test(body) ? HEADER.replace("from torch import nn", "from torch import nn, optim") : HEADER;
+  let header = /\boptim\./.test(body) ? HEADER.replace("from torch import nn", "from torch import nn, optim") : HEADER;
+  const extra = EXTRA_IMPORTS.filter((name) => body.includes(`${name}(`));
+  if (extra.length) header = header.replace("decode_practice\n", `decode_practice, ${extra.join(", ")}\n`);
   return header + body;
 }
 
@@ -163,10 +205,16 @@ export function checkProgram(workspace, cfg, checkModel) {
     if (at("scheduler") >= 0 && (at("scheduler") < at("optimizer") || at("scheduler") > trainAt)) {
       problems.push("Put the Scheduler between the Optimizer and Train: it changes the optimizer's learning rate.");
     }
+    for (const [type, name] of [["augment", "Augment training images"], ["early_stopping", "Early stopping"]]) {
+      if (at(type) > trainAt) problems.push(`Move ${name} above Train: it changes how Train works.`);
+    }
+    const augment = steps.includes("augment") && workspace.getBlocksByType("augment", false)[0];
+    if (augment && !augmentations(augment).length) hints.push("Augment training images has nothing ticked, so it changes nothing.");
   }
-  for (const type of ["evaluate", "decode_practice"]) {
+  const AFTER_TRAIN = { evaluate: "Evaluate", decode_practice: "Decode practice image",
+    confusion_matrix: "Confusion matrix", worst_mistakes: "Worst mistakes" };
+  for (const [type, name] of Object.entries(AFTER_TRAIN)) {
     if (at(type) >= 0 && trainAt >= 0 && at(type) < trainAt) {
-      const name = type === "evaluate" ? "Evaluate" : "Decode practice image";
       problems.push(`Move ${name} below Train: it needs a trained model.`);
     }
   }

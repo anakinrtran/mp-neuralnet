@@ -9,6 +9,7 @@
   --error-bg: #fdecec;
   --error-ink: #a12424;
   --chart-line: #2f6fd6;
+  --chart-line-2: #d65f2f;
   --chart-grid: #e6e9ee;
   --weight-pos: #c0392b;
   --weight-neg: #2e6fb5;
@@ -180,3 +181,28 @@ td.num { font-variant-numeric: tabular-nums; }
 #char-canvas { width: 84px; height: 84px; image-rendering: pixelated; border: 1px solid var(--border); background: #fff; }
 #char-label { font-size: 13px; }
 .class-chip { display: inline-block; width: 12px; height: 12px; border: 1px solid var(--border); vertical-align: -1px; margin-right: 4px; }
+
+/* Workspace 4: confusion matrix, worst mistakes */
+.confusion-row { display: flex; gap: 14px; align-items: flex-start; }
+.confusion-row .note { margin-top: 0; min-width: 140px; }
+#confusion-view { position: relative; flex: none; }
+#confusion-view[hidden] { display: none; }
+#confusion-canvas { display: block; cursor: crosshair; }
+.mistakes { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 8px; }
+.mistakes figure { margin: 0; text-align: center; font-size: 12px; }
+.mistakes canvas { width: 70px; height: 70px; image-rendering: pixelated; border: 1px solid var(--border); }
+
+/* Workspace 5: your image, model card */
+.upload { display: block; margin: 8px 0; }
+.upload-steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.upload-steps figure { margin: 0; font-size: 12px; color: var(--ink-muted); }
+.upload-steps img { display: block; max-width: 100%; border: 1px solid var(--border); margin-bottom: 4px; }
+.upload-steps img.pixels { image-rendering: pixelated; }
+.upload-steps .note { grid-column: 1 / -1; }
+a.button { display: inline-block; margin-top: 12px; border: 1px solid var(--border); border-radius: 6px;
+  padding: 5px 12px; color: var(--ink); text-decoration: none; background: var(--surface); }
+.card-doc { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 16px 12px;
+  margin-bottom: 10px; }
+.card-doc h2 { font-size: 17px; margin: 12px 0 0; text-transform: none; letter-spacing: normal; color: var(--ink); }
+.card-doc h3 { font-size: 14px; margin: 14px 0 4px; }
+.card-doc p, .card-doc ul { margin: 4px 0; }

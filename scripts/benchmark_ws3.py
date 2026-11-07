@@ -2,6 +2,8 @@
 Staff only: reads the private practice labels. Results set `threshold` in shared/workspaces.py.
 
     python scripts/benchmark_ws3.py [SEED ...]     (default seeds 0 1 2)
+    python scripts/benchmark_ws3.py --grid [SEED ...]   the optimizer x learning rate x BatchNorm x scheduler grid
+    python scripts/benchmark_ws3.py --grid --match TEXT [SEED ...]   only the setups whose name contains TEXT
 """
 import json
 import os
@@ -43,36 +45,54 @@ SETUPS = {
     "Adam 3e-3 BN cosine": dict(opt="optim.Adam(model.parameters(), lr=0.003)", bn=True, sched="cosine"),
 }
 
+# the steps suggest learning rates in powers of ten; BatchNorm "conv" = right after the Conv only
+OPTS = {"SGD": "optim.SGD(model.parameters(), lr={lr})",
+        "SGD+mom": "optim.SGD(model.parameters(), lr={lr}, momentum=0.9)",
+        "Adam": "optim.Adam(model.parameters(), lr={lr})"}
+GRID = {f"{o} {lr}{' BN' if bn else ''}{' ' + sc if sc else ''}":
+        dict(opt=OPTS[o].format(lr=lr), bn=bn, sched=sc)
+        for o in OPTS for lr in (0.001, 0.01, 0.1, 1) for bn in ("", "conv") for sc in ("", "cosine", "step")
+        if not (o == "SGD" and lr < 0.01) and not (o != "SGD" and lr == 1)}
+
 
 def code_for(s):
     sched = ""
     if s.get("sched") == "cosine":
         sched = f"scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max={2 * STEPS})\n"
+    elif s.get("sched") == "step":
+        sched = f"scheduler = optim.lr_scheduler.StepLR(optimizer, step_size={STEPS}, gamma=0.1)\n"
     return CODE.format(
         model=MODEL.format(bn2="nn.LazyBatchNorm2d(), " if s.get("bn") else "",
-                           bn1="nn.LazyBatchNorm1d(), " if s.get("bn") else ""),
+                           bn1="nn.LazyBatchNorm1d(), " if s.get("bn") is True else ""),
         opt=s["opt"], sched=sched, loss=s.get("loss", "nn.CrossEntropyLoss()"), batch=128,
         sched_arg=", scheduler=scheduler" if sched else "")
 
 
 def main():
-    seeds = [int(a) for a in sys.argv[1:]] or [0, 1, 2]
+    args = sys.argv[1:]
+    grid = "--grid" in args
+    match = args[args.index("--match") + 1] if "--match" in args else ""
+    seeds = [int(a) for a in args if a.isdigit()] or [0, 1, 2]
     env = {**os.environ, "MPNN_WORKSPACE": "ws3"}
-    for name, s in SETUPS.items():
-        accs, secs = [], []
+    for name, s in (GRID if grid else SETUPS).items():
+        if match not in name:
+            continue
+        accs, secs, vals = [], [], []
         for seed in seeds:
             run = OUT / f"{name.replace(' ', '_').replace(':', '')}_{seed}"
             run.mkdir(parents=True, exist_ok=True)
             (run / "model.py").write_text(code_for(s))
             t = time.time()
-            subprocess.run([sys.executable, str(REPO / "shared/harness.py"),
-                            str(run / "model.py"), "--run-dir", str(run), "--seed", str(seed)],
-                           env=env, capture_output=True, text=True)
+            out = subprocess.run([sys.executable, str(REPO / "shared/harness.py"),
+                                  str(run / "model.py"), "--run-dir", str(run), "--seed", str(seed)],
+                                 env=env, capture_output=True, text=True).stdout
+            vals.append(next((json.loads(line[2:])["accuracy"] for line in out.splitlines()
+                              if line.startswith('@@{"event": "evaluate"')), float("nan")))
             secs.append(time.time() - t)
             pred_file = run / "practice_pred.npy"
             accs.append(float((VISIBLE_GROUP[np.load(pred_file)] == VISIBLE_GROUP[LABELS]).mean())
                         if pred_file.exists() else float("nan"))
-        print(json.dumps({"setup": name, "visible": [round(a, 4) for a in accs],
+        print(json.dumps({"setup": name, "visible": [round(a, 4) for a in accs], "val": vals,
                           "seconds": [round(x) for x in secs]}), flush=True)
 
 

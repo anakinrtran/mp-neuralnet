@@ -23,6 +23,7 @@ weights instead of training.
 """
 
 import argparse
+import copy
 import json
 import math
 import os
@@ -34,6 +35,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from torch import nn
+from torch.nn import functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 REPO = Path(__file__).resolve().parent.parent
@@ -41,14 +43,21 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from shared import config, workspaces  # noqa: E402
-from shared.palette import CLASSES  # noqa: E402
+from shared.palette import CLASSES, VISIBLE_GROUP  # noqa: E402
 
 DATA_DIR = Path(os.environ.get("MPNN_DATA", REPO / "data" / "processed" / "public"))
 WORKSPACE = workspaces.current()
-TRAIN_PER_CLASS = int(os.environ.get("MPNN_TRAIN_PER_CLASS", config.TRAIN_PER_CLASS))
+TRAIN_PER_CLASS = int(os.environ.get("MPNN_TRAIN_PER_CLASS", WORKSPACE.train_per_class))
+MIN_TRAIN_PER_CLASS = 10
 EVAL_BATCH = 256  # bigger chunks need hundreds of MB with wide Conv layers (1 GB workspaces)
 STEP_EVENTS_PER_EPOCH = 40
-VAL_EVENTS_PER_EPOCH = 4
+VAL_EVENTS_PER_EPOCH = 4  # one per epoch for runs over 10 epochs (Workspace 4's short epochs)
+STEP_EVENTS_MAX = 400  # per run: each one copies every layer's weights
+AUGMENTATIONS = {"rotate", "shift", "flip"}
+ROTATE_DEGREES = 15
+SHIFT_PIXELS = 3
+MAX_PATIENCE = 10
+MISTAKES_SHOWN = 16
 ZOOM_STEPS = 30  # steps recorded one by one at the start
 TIMELAPSE_SNAPSHOTS = 10  # of the first Conv layer, saved to timelapse.npz
 TIMELAPSE_FILTERS = 16
@@ -67,13 +76,19 @@ def emit(event: str, **data):
 
 # ---------- functions called by generated code ----------
 
-def load_data():
-    """Return (train_data, val_data) as TensorDatasets of (1, 28, 28) images and labels."""
+def load_data(train_per_class=None):
+    """Return (train_data, val_data) as TensorDatasets of (1, 28, 28) images and labels.
+    train_per_class: training characters per class (Workspace 4's small set; checked in grading too)."""
+    most = WORKSPACE.train_per_class
+    if train_per_class is None:
+        train_per_class = TRAIN_PER_CLASS
+    elif not isinstance(train_per_class, int) or not MIN_TRAIN_PER_CLASS <= train_per_class <= most:
+        raise StudentError(f"The training set can have {MIN_TRAIN_PER_CLASS} to {most} characters per class.")
     if _state["mode"] == "load":
         return None, None
     train = np.load(DATA_DIR / "train.npz")
     val = np.load(DATA_DIR / "val.npz")
-    keep = np.concatenate([np.flatnonzero(train["y"] == c)[:TRAIN_PER_CLASS]
+    keep = np.concatenate([np.flatnonzero(train["y"] == c)[:train_per_class]
                            for c in range(config.NUM_CLASSES)])
     keep.sort()  # the pool is already shuffled; sorting keeps that order
     train_data = _to_dataset(train["x"][keep], train["y"][keep])
@@ -83,15 +98,24 @@ def load_data():
 
 
 def train(model, train_data, val_data, epochs=WORKSPACE.default_epochs, batch_size=config.BATCH_SIZE,
-          optimizer=None, loss_fn=None, scheduler=None):
+          optimizer=None, loss_fn=None, scheduler=None, augment=None, early_stopping=None):
     """Train the model. Workspaces 1-2 use the defaults (Adam, cross-entropy, batch 128); from
     Workspace 3 the blocks pass their own optimizer, loss and scheduler. The scheduler is
     stepped after every batch. An MSE loss compares the softmax probabilities with the
-    one-hot right answer, the usual way to use it for classification."""
+    one-hot right answer, the usual way to use it for classification.
+    From Workspace 4: augment lists random changes made to each training batch ("rotate",
+    "shift", "flip"); early_stopping=N stops after N epochs without a better validation
+    accuracy and keeps the weights from the best epoch."""
     if not isinstance(epochs, int) or not 1 <= epochs <= WORKSPACE.max_epochs:
         raise StudentError(f"Epochs must be a whole number from 1 to {WORKSPACE.max_epochs}.")
     if batch_size not in config.BATCH_SIZES:
         raise StudentError(f"Batch size must be one of {', '.join(map(str, config.BATCH_SIZES))}.")
+    augment = list(augment or [])
+    if not set(augment) <= AUGMENTATIONS:
+        raise StudentError(f"Augmentations can be {', '.join(sorted(AUGMENTATIONS))}.")
+    if early_stopping is not None and (not isinstance(early_stopping, int)
+                                       or not 1 <= early_stopping <= MAX_PATIENCE):
+        raise StudentError(f"Early stopping patience must be a whole number from 1 to {MAX_PATIENCE}.")
     check_model(model)
     _state["model"] = model
 
@@ -108,10 +132,16 @@ def train(model, train_data, val_data, epochs=WORKSPACE.default_epochs, batch_si
     loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
     weighted = [m for m in model.modules() if isinstance(m, (nn.Linear, nn.Conv2d))]
     steps_per_epoch = len(loader)
-    step_every = max(1, steps_per_epoch // STEP_EVENTS_PER_EPOCH)
-    val_steps = {round(k * steps_per_epoch / VAL_EVENTS_PER_EPOCH) for k in range(1, VAL_EVENTS_PER_EPOCH + 1)}
+    step_every = max(1, steps_per_epoch // STEP_EVENTS_PER_EPOCH, epochs * steps_per_epoch // STEP_EVENTS_MAX)
+    per_epoch = VAL_EVENTS_PER_EPOCH if epochs <= 10 else 1
+    val_steps = {round(k * steps_per_epoch / per_epoch) for k in range(1, per_epoch + 1)}  # includes the last
+    # training accuracy is measured on as many training characters as there are validation ones
+    train_sample = TensorDataset(*(t[:len(val_data)] for t in train_data.tensors))
+    best = None  # early stopping: (validation accuracy, epoch, weights)
+    stale = 0
 
-    emit("settings", text=_settings_text(optimizer, loss_fn, scheduler, batch_size))
+    emit("settings", text=_settings_text(optimizer, loss_fn, scheduler, batch_size, len(train_data),
+                                         augment, early_stopping))
     emit("train_start", epochs=epochs, steps_per_epoch=steps_per_epoch,
          parameters=sum(p.numel() for p in model.parameters()),
          weighted=[n for n in describe_layers(model) if n.startswith(("Conv", "Linear"))])
@@ -121,7 +151,7 @@ def train(model, train_data, val_data, epochs=WORKSPACE.default_epochs, batch_si
         running, count = 0.0, 0
         for i, (x, y) in enumerate(loader, start=1):
             model.train()
-            out = model(_as_float(x))
+            out = model(_augment(_as_float(x), augment) if augment else _as_float(x))
             if isinstance(loss_fn, nn.MSELoss):
                 loss = loss_fn(out.softmax(1), nn.functional.one_hot(y, config.NUM_CLASSES).float())
             else:
@@ -152,27 +182,65 @@ def train(model, train_data, val_data, epochs=WORKSPACE.default_epochs, batch_si
                      updates=[round(u, 6) if math.isfinite(u) else None for u in updates])
                 running, count = 0.0, 0
             if i in val_steps:
-                emit("val", progress=round(progress, 4), accuracy=round(accuracy(model, val_data), 4))
+                val_acc = accuracy(model, val_data)
+                extra = {"train_accuracy": round(accuracy(model, train_sample), 4)} if WORKSPACE.train_accuracy else {}
+                emit("val", progress=round(progress, 4), accuracy=round(val_acc, 4), **extra)
         emit("epoch", epoch=epoch + 1, seconds=round(time.perf_counter() - start, 2))
+        if early_stopping:
+            if best is None or val_acc > best[0]:
+                best, stale = (val_acc, epoch + 1, copy.deepcopy(model.state_dict())), 0
+            else:
+                stale += 1
+            if stale >= early_stopping:
+                emit("early_stop", epoch=epoch + 1, best_epoch=best[1], accuracy=round(best[0], 4))
+                break
 
+    if best is not None:
+        model.load_state_dict(best[2])
+        emit("best_weights", epoch=best[1], accuracy=round(best[0], 4))
     torch.save(model.state_dict(), _state["run_dir"] / "model.pt")
     snapshot.save(_state["run_dir"] / "timelapse.npz")
     emit("train_done", seconds=round(time.perf_counter() - start, 2))
 
 
-def _settings_text(optimizer, loss_fn, scheduler, batch_size) -> str:
+def _settings_text(optimizer, loss_fn, scheduler, batch_size, train_size, augment, patience) -> str:
     """e.g. "SGD + momentum, lr 0.1 · cosine · cross-entropy · batch 128" for the run history."""
     group = optimizer.param_groups[0]
     name = type(optimizer).__name__
     if name == "SGD" and group.get("momentum"):
         name = "SGD + momentum"
     parts = [f"{name}, lr {group.get('initial_lr', group['lr']):g}"]
+    if group.get("weight_decay"):
+        parts[0] += f", weight decay {group['weight_decay']:g}"
     if scheduler is not None:
         parts.append({"StepLR": "step decay", "CosineAnnealingLR": "cosine"}.get(
             type(scheduler).__name__, type(scheduler).__name__))
     parts.append("MSE" if isinstance(loss_fn, nn.MSELoss) else "cross-entropy")
     parts.append(f"batch {batch_size}")
+    if WORKSPACE.train_per_class < config.TRAIN_PER_CLASS:  # Workspace 4's small training sets
+        parts.append(f"{train_size // config.NUM_CLASSES} per class")
+    if augment:
+        parts.append("augment " + " + ".join(augment))
+    if patience:
+        parts.append(f"early stopping {patience}")
     return " · ".join(parts)
+
+
+def _augment(x: torch.Tensor, kinds: list[str]) -> torch.Tensor:
+    """A randomly changed copy of a batch of (N, 1, 28, 28) images: each image gets its own
+    small rotation and/or shift, and/or is mirrored left to right with chance 1/2."""
+    n = len(x)
+    if "flip" in kinds:
+        mirror = torch.rand(n) < 0.5
+        x = torch.where(mirror[:, None, None, None], x.flip(-1), x)
+    if "rotate" in kinds or "shift" in kinds:
+        angle = (torch.rand(n) * 2 - 1) * math.radians(ROTATE_DEGREES) if "rotate" in kinds else torch.zeros(n)
+        # affine_grid measures shifts in half-widths of the image
+        move = (torch.rand(n, 2) * 2 - 1) * SHIFT_PIXELS * 2 / 28 if "shift" in kinds else torch.zeros(n, 2)
+        cos, sin = angle.cos(), angle.sin()
+        theta = torch.stack([torch.stack([cos, -sin, move[:, 0]], 1), torch.stack([sin, cos, move[:, 1]], 1)], 1)
+        x = F.grid_sample(x, F.affine_grid(theta, list(x.shape), align_corners=False), align_corners=False)
+    return x
 
 
 def _timelapse_recorder(model, val_data, total_steps):
@@ -210,6 +278,32 @@ def evaluate(model, val_data):
     acc = accuracy(model, val_data)
     emit("evaluate", accuracy=round(acc, 4))
     return acc
+
+
+def confusion_matrix(model, val_data):
+    """Count, for every true class (row), how often each class (column) was predicted."""
+    if _state["mode"] == "load":
+        return
+    images, labels = val_data.tensors
+    n = config.NUM_CLASSES
+    matrix = np.bincount(labels.numpy() * n + predict(model, images), minlength=n * n).reshape(n, n)
+    emit("confusion", matrix=matrix.tolist())
+    return matrix
+
+
+def worst_mistakes(model, val_data):
+    """The validation characters the model got wrong while most sure of its guess. Mix-ups of
+    look-alikes (0/O, ...) are skipped: they count as right in this course."""
+    if _state["mode"] == "load":
+        return
+    images, labels = val_data.tensors
+    probs = predict_probs(model, images)
+    guess = probs.argmax(1)
+    wrong = np.flatnonzero(VISIBLE_GROUP[guess] != VISIBLE_GROUP[labels.numpy()])
+    worst = wrong[np.argsort(-probs[wrong, guess[wrong]], kind="stable")][:MISTAKES_SHOWN]
+    emit("mistakes", count=len(wrong), total=len(labels), items=[
+        {"image": images[i, 0].tolist(), "label": CLASSES[labels[i]], "guess": CLASSES[guess[i]],
+         "confidence": round(float(probs[i, guess[i]]), 4)} for i in worst])
 
 
 def decode_practice(model):
@@ -264,6 +358,8 @@ def describe_layers(model) -> list[str]:
             return "MaxPool"
         if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d)):
             return "BatchNorm"
+        if isinstance(m, nn.Dropout):
+            return f"Dropout({m.p:g})"
         return type(m).__name__
     return [name(m) for m in layers]
 
@@ -280,14 +376,27 @@ def predict(model, images: torch.Tensor) -> np.ndarray:
                       for i in range(0, len(images), EVAL_BATCH)]).numpy()
 
 
+@torch.no_grad()
+def predict_probs(model, images: torch.Tensor) -> np.ndarray:
+    model.eval()
+    return torch.cat([model(_as_float(images[i:i + EVAL_BATCH])).softmax(1)
+                      for i in range(0, len(images), EVAL_BATCH)]).numpy()
+
+
 def accuracy(model, data: TensorDataset) -> float:
+    """Share of characters guessed right, counting look-alike mix-ups (0/O, ...) as right, like the grader."""
     images, labels = data.tensors
-    return float((predict(model, images) == labels.numpy()).mean())
+    return float((VISIBLE_GROUP[predict(model, images)] == VISIBLE_GROUP[labels.numpy()]).mean())
 
 
 def predict_practice(model) -> np.ndarray:
     """Predicted class for every practice character, as an (H, W) grid."""
-    chars = np.load(DATA_DIR / WORKSPACE.practice_file)["x"]
+    return predict_grid(model, DATA_DIR / WORKSPACE.practice_file)
+
+
+def predict_grid(model, path: Path) -> np.ndarray:
+    """Predicted class for every character of a grid file (practice, held-out or hidden)."""
+    chars = np.load(path)["x"]
     h, w = chars.shape[:2]
     images = torch.from_numpy(chars.reshape(-1, 28, 28)).float().div_(255).unsqueeze(1)
     return predict(model, images).reshape(h, w)

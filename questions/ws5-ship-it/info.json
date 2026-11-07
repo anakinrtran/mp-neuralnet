@@ -1,0 +1,32 @@
+{
+  "uuid": "10c0ee18-ed3d-4add-af06-c208a4c77960",
+  "title": "Workspace 5: Ship it",
+  "topic": "NeuralNet",
+  "type": "v3",
+  "singleVariant": true,
+  "workspaceOptions": {
+    "image": "anakintran/cs124h-mp-neuralnet:workspace-fa26",
+    "port": 8080,
+    "home": "/home/student",
+    "rewriteUrl": true,
+    "gradedFiles": [
+      "model.*",
+      "submission.*"
+    ],
+    "enableNetworking": false,
+    "environment": {
+      "MPNN_WORKSPACE": "ws5"
+    }
+  },
+  "gradingMethod": "External",
+  "externalGradingOptions": {
+    "enabled": true,
+    "image": "anakintran/cs124h-mp-neuralnet:grader-fa26",
+    "entrypoint": "python /opt/mpnn/grader/grade.py",
+    "timeout": 60,
+    "enableNetworking": false,
+    "environment": {
+      "MPNN_WORKSPACE": "ws5"
+    }
+  }
+}
