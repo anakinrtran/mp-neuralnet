@@ -134,9 +134,10 @@ WORKSPACES = {ws.id: ws for ws in [
         # linear 75.8/76.0%, MLP 84.2/84.6%, start CNN 85.4/85.8%, + dropout 0.3/0.5/0.7 86.8/87.8/86.4%
         # (val 86.9/87.4/86.5%), + weight decay 1e-3 85.5%, + early stopping 5 85.2%, + rotate 87.8/88.9%,
         # + shift 90.9%, + rotate+shift 89.9/90.9%, + rotate+shift+mirror 79.0%, dropout + rotate+shift 40 epochs
-        # 92.5/92.2%. Earlier seeds 1-2: start 86.4/85.4%, dropout 0.5 87.2/86.7%. 0.87: the start fails; dropout
-        # 0.5 or the Augment block's default (rotate) passes on the 2nd run. Validation tracks hidden within ~1 point.
-        threshold=0.87,
+        # 92.5/92.2%. Earlier seeds 1-2: start 86.4/85.4%, dropout 0.5 87.2/86.7%. 0.90 (was 0.87): the start and any
+        # single fix except shift fail; shift, shift + early stopping 5 (92.1%) or 40 augmented epochs (92.1-93.4%) pass;
+        # rotate+shift and dropout + shift at 20 epochs miss by 0.1 (89.9%). Validation tracks hidden within ~1 point.
+        threshold=0.90,
         default_epochs=20,
         max_epochs=60,
         threads=0,
